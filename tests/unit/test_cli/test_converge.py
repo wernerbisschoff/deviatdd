@@ -492,6 +492,54 @@ class TestConvergePost:
         assert tasks.read_bytes() == before
 
     @pytest.mark.behavioral
+    def test_second_ledger_failure_preserves_task_text_and_diagnostic(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _, _, tasks = _seed_issue(tmp_git_repo)
+        assert tasks is not None
+        before = tasks.read_bytes()
+        findings = json.dumps(
+            {
+                "findings": [
+                    {
+                        "taxonomy": "missing",
+                        "source_ref": "AC-PLAN-002",
+                        "summary": "first gap",
+                    },
+                    {
+                        "taxonomy": "partial",
+                        "source_ref": "AC-PLAN-003",
+                        "summary": "second gap",
+                    },
+                ]
+            }
+        )
+        calls = 0
+
+        def append_record_with_failure(record, ledger_path):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError("ledger unavailable")
+            return True
+
+        with (
+            chdir(tmp_git_repo),
+            patch(
+                "deviate.cli.converge.append_task_record",
+                side_effect=append_record_with_failure,
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                ["converge", "post", findings],
+            )
+        assert result.exit_code != 0
+        assert "LEDGER_APPEND_FAILED" in result.stdout
+        assert "ledger unavailable" in result.stdout
+        assert tasks.read_bytes() == before
+
+    @pytest.mark.behavioral
     def test_apply_findings_appends_each_pending_record_in_critical_order(
         self, tmp_git_repo: Path
     ) -> None:
