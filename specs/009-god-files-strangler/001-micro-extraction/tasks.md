@@ -66,6 +66,12 @@
     - Correction: Author tests/unit/test_micro/test_micro_import_targets.py to check bare shim import absence and submodule import resolution via importlib resolution rather than def/class source text.
     - Verification: Run uv run pytest tests/unit/test_micro -q and expect a failure caused by existing shim imports, not by app object definition style.
     - Boundary: Change tests only. Do not edit production code or expand the acceptance contract.
+  - **Judge Feedback**: The next RED attempt must:
+    - Requirement: AC-PLAN-006 requires callers import directly from src/deviate/cli/micro/ submodules with zero bare shim imports remaining, and AO-005 requires zero submodules import the shim.
+    - Evidence: The rejected GREEN passed RED while new surface.py, pending.py, and suites.py each re-exported from deviate.cli.micro.
+    - Correction: Author tests/unit/test_micro/test_micro_import_targets.py to scan all src/deviate/cli/micro/*.py submodules for bare from deviate.cli.micro import lines and fail when found, plus keep caller bare-import and submodule-resolution checks via importlib.
+    - Verification: Run uv run pytest tests/unit/test_micro -q and expect a failure caused by shim-dependent submodules, not by setup or collection errors.
+    - Boundary: Change tests only. Do not edit production code or expand the acceptance contract.
 ## Phase 3: Parity gate and shim deletion
 **Goal**: Prove post-move parity and remove the shim in its own commit
 
