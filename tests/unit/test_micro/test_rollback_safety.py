@@ -23,6 +23,9 @@ contract:
 
 from __future__ import annotations
 
+import io
+from contextlib import chdir
+
 import json
 import subprocess
 from pathlib import Path
@@ -31,6 +34,11 @@ from unittest.mock import patch
 import pytest
 
 from tests.conftest import _git_env
+
+from rich.console import Console
+
+from deviate.core.agent import HandoverManifest
+from deviate.state.config import SessionState
 
 
 def _current_head(repo: Path) -> str:
@@ -852,3 +860,97 @@ class TestRefuseUnsafeRollback:
         assert _ref_sha(tmp_git_repo, prior_ref) == prior_sha
         assert not _ref_exists(tmp_git_repo, next_ref)
         assert (tmp_git_repo / "scratch.txt").read_text(encoding="utf-8") == "wip\n"
+
+
+@pytest.mark.behavioral
+def test_judge_missing_red_boundary_reports_bug_and_preserves_evidence(
+    tmp_git_repo: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from deviate.cli.micro import _apply_judge_verdict
+
+    head_sha = _current_head(tmp_git_repo)
+    session_path = tmp_git_repo / ".deviate" / "session.json"
+    session_path.parent.mkdir()
+    session = SessionState(current_phase="JUDGE", active_issue_id="ISS-ADH-059")
+    session.save(session_path)
+    task = {"id": "TSK-059-01", "head_sha": head_sha, "recovery_ref": "recover/ref"}
+    manifest = HandoverManifest(
+        phase="JUDGE",
+        status="PASS",
+        task_id="TSK-059-01",
+        verdict="COMPLIANCE_VIOLATION",
+        next_action="revert_green",
+        rationale="missing RED boundary",
+    )
+    with (
+        patch(
+            "deviate.cli.micro._commit_judge_feedback_and_advance"
+        ) as feedback_commit,
+        chdir(tmp_git_repo),
+        pytest.raises(Exception) as excinfo,
+    ):
+        _apply_judge_verdict(
+            task,
+            tmp_path / "tasks.jsonl",
+            session,
+            session_path,
+            Console(file=io.StringIO()),
+            manifest,
+            injected_diff="",
+        )
+
+    text = str(excinfo.value)
+    assert "DEVIATDD_BUG" in text
+    assert f'head_sha="{head_sha}"' in text
+    assert 'recovery_ref="recover/ref"' in text
+    assert "/deviate-green" in text
+    assert "HEAD~1" not in text
+    assert _current_head(tmp_git_repo) == head_sha
+    assert feedback_commit.call_count == 0
+
+
+@pytest.mark.behavioral
+def test_judge_empty_red_boundary_keeps_empty_evidence(
+    tmp_git_repo: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from deviate.cli.micro import _apply_judge_verdict
+
+    session_path = tmp_git_repo / ".deviate" / "session.json"
+    session_path.parent.mkdir()
+    session = SessionState(current_phase="JUDGE", active_issue_id="ISS-ADH-059")
+    session.save(session_path)
+    task = {"id": "TSK-059-01", "head_sha": None, "recovery_ref": None}
+    manifest = HandoverManifest(
+        phase="JUDGE",
+        status="PASS",
+        task_id="TSK-059-01",
+        verdict="COMPLIANCE_VIOLATION",
+        next_action="revert_green",
+        rationale="missing RED boundary",
+    )
+    monkeypatch.setattr(
+        "deviate.cli.micro._commit_judge_feedback_and_advance",
+        lambda *args, **kwargs: pytest.fail("feedback commit must be skipped"),
+    )
+
+    with chdir(tmp_git_repo), pytest.raises(Exception) as excinfo:
+        _apply_judge_verdict(
+            task,
+            tmp_path / "tasks.jsonl",
+            session,
+            session_path,
+            Console(file=io.StringIO()),
+            manifest,
+            injected_diff="",
+        )
+
+    text = str(excinfo.value)
+    assert "DEVIATDD_BUG" in text
+    assert 'head_sha=""' in text
+    assert 'recovery_ref=""' in text
+    assert "/deviate-green" in text
+    assert "HEAD~1" not in text
