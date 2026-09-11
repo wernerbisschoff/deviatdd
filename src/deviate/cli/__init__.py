@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+from contextlib import chdir
 import importlib.resources
 import re
 import shutil
 import subprocess
 from pathlib import Path
-from contextlib import chdir
 
 import typer
 from rich.console import Console
@@ -1901,7 +1901,6 @@ def _drain_micro(worktree_path: Path, console: Console, model: str | None) -> No
             raise
 
 
-
 def _run_walkthrough(worktree_path: Path) -> None:
     """Run walkthrough after the optional Converge loop."""
     from deviate.cli._common import _get_current_branch
@@ -1914,7 +1913,6 @@ def _run_walkthrough(worktree_path: Path) -> None:
         )
 
 
-
 def _run_review(worktree_path: Path) -> None:
     """Run review after the optional Converge loop."""
     from click import Command, Context
@@ -1924,7 +1922,6 @@ def _run_review(worktree_path: Path) -> None:
             _review_pre(Context(Command("review")), base=None, branch=None, apply=False)
     except (Exception, SystemExit):
         return
-
 
 
 def _run_pr(worktree_path: Path) -> None:
