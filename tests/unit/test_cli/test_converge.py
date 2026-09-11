@@ -700,3 +700,57 @@ class TestDeviateRunConvergeTail:
 
         assert result.exit_code != 0
         assert "CONVERGE_NOT_READY" in result.output
+
+    @pytest.mark.behavioral
+    def test_converge_finishes_before_walkthrough_review_and_pr(
+        self, tmp_git_repo: Path
+    ) -> None:
+        worktree = self._worktree(tmp_git_repo)
+        events: list[str] = []
+        outcomes = iter(["appended", "converged"])
+
+        def drain(*_args, **_kwargs):
+            events.append("micro")
+
+        def converge_pass(_root: Path) -> str:
+            events.append("converge")
+            return next(outcomes)
+
+        def downstream(name: str):
+            def run(*_args, **_kwargs):
+                events.append(name)
+
+            return run
+
+        with chdir(tmp_git_repo):
+            with (
+                patch("deviate.cli._meso_run", return_value=str(worktree)),
+                patch("deviate.cli._run_all", side_effect=drain),
+                patch(
+                    "deviate.cli._run_converge_pass",
+                    side_effect=converge_pass,
+                ),
+                patch(
+                    "deviate.cli._run_walkthrough",
+                    side_effect=downstream("walkthrough"),
+                    create=True,
+                ),
+                patch(
+                    "deviate.cli._run_review",
+                    side_effect=downstream("review"),
+                    create=True,
+                ),
+                patch("deviate.cli._run_pr", side_effect=downstream("pr"), create=True),
+            ):
+                result = runner.invoke(cli, ["run", "--converge"])
+
+        assert result.exit_code == 0, result.output
+        assert events == [
+            "micro",
+            "converge",
+            "micro",
+            "converge",
+            "walkthrough",
+            "review",
+            "pr",
+        ]
