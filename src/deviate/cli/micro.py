@@ -3647,9 +3647,7 @@ def _append_judge_verdict_record(
     }
     if next_action in {"revert_red", "revert_green"}:
         for key in ("head_sha", "reset_to", "recovery_ref"):
-            sha = _rollback_index_field(getattr(rollback, key, None))
-            if sha is not None:
-                record[key] = sha
+            record[key] = _rollback_index_field(getattr(rollback, key, None))
     append_verdicts_record(Path.cwd(), issue_id, tid, record)
     _note_cycle_verdict(next_action, streak)
     if loop:
@@ -5000,6 +4998,16 @@ def _apply_judge_verdict(
             raise
         except Exception as e:
             if _is_fatal_missing_revert_green_boundary(action, e):
+                if action == "revert_green" and "ROLLBACK_BOUNDARY_MISSING" in str(e):
+                    head_sha = str(task.get("head_sha") or "")
+                    recovery_ref = str(task.get("recovery_ref") or "")
+                    _record_reject_verdict()
+                    raise PhaseFailedError(
+                        f"DEVIATDD_BUG: ROLLBACK_BOUNDARY_MISSING; "
+                        f'head_sha="{head_sha}" '
+                        f'recovery_ref="{recovery_ref}" '
+                        "Recommend /deviate-green."
+                    ) from e
                 _record_reject_verdict()
                 raise
             c.print(

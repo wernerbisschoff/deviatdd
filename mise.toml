@@ -6,13 +6,14 @@ python = "3.13"
 [tools]
 python = "3.13"
 uv = "latest"
+"npm:bats" = "1.13.0"
 
 [tasks.test]
 run = "uv run pytest --testmon-noselect tests/ -v"
 description = "Run the full test suite (forces full-suite; keeps .testmondata fresh)"
 
 [tasks.test-e2e]
-run = "bats tests/e2e/"
+run = "mise exec npm:bats -- npx --no-install bats tests/e2e/"
 description = "Run E2E tests via bats"
 
 [tasks.test-affected]

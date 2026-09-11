@@ -23,6 +23,9 @@ contract:
 
 from __future__ import annotations
 
+import io
+from contextlib import chdir
+
 import json
 import subprocess
 from pathlib import Path
@@ -31,6 +34,11 @@ from unittest.mock import patch
 import pytest
 
 from tests.conftest import _git_env
+
+from rich.console import Console
+
+from deviate.core.agent import HandoverManifest
+from deviate.state.config import SessionState
 
 
 def _current_head(repo: Path) -> str:
@@ -76,18 +84,6 @@ def _ref_sha(repo: Path, ref: str) -> str:
     """Return the SHA of the named ref (assumes it exists)."""
     return subprocess.run(
         ["git", "rev-parse", ref],
-        cwd=repo,
-        env=_git_env(),
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-
-
-def _parent_head(repo: Path) -> str:
-    """Return the SHA of ``HEAD^`` (feedback commit sits atop the reset target)."""
-    return subprocess.run(
-        ["git", "rev-parse", "HEAD^"],
         cwd=repo,
         env=_git_env(),
         check=True,
@@ -866,142 +862,95 @@ class TestRefuseUnsafeRollback:
         assert (tmp_git_repo / "scratch.txt").read_text(encoding="utf-8") == "wip\n"
 
 
-class TestRevertRedMissingResetTask:
-    """ISS-ADH-060: ``revert_red`` finishes when ``mise run reset`` is missing.
+@pytest.mark.behavioral
+def test_judge_missing_red_boundary_reports_bug_and_preserves_evidence(
+    tmp_git_repo: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from deviate.cli.micro import _apply_judge_verdict
 
-    AC-PLAN-001 (AO-060-01): git reset to ``reset_to`` lands and the
-    orphan RED commit stays reachable via ``recovery_ref`` even with no
-    ``[tasks.reset]`` entry. AC-PLAN-003 (AO-060-02): the report carries
-    ``head_sha`` / ``reset_to`` / ``recovery_ref`` and the RED ledger row
-    persists instead of an unhandled mid-rollback ``EnvNotReadyError``.
-    """
-
-    def _run_revert_red_judge(self, repo, *, test_strategy):
-        """Drive ``_run_judge_phase`` with a ``revert_red`` verdict.
-
-        Returns ``(session, green_sha, pre_red_sha, expected_ref)``.
-        ``tmp_git_repo`` ships no ``mise.toml``, so ``_mise_defined_tasks``
-        is empty and the missing-reset path is live with no stubbing.
-        """
-        import io
-        from contextlib import chdir
-        from unittest.mock import patch
-
-        from rich.console import Console
-
-        from deviate.cli.micro import _recovery_branch_for, _run_judge_phase
-        from deviate.state.config import SessionState
-        from tests.unit.test_micro.test_judge import (
-            _GATE_ISSUE_ID,
-            _GATE_TASK_ID,
-            _gate_evidence,
-            _gate_manifest,
-            _seed_red_green,
+    head_sha = _current_head(tmp_git_repo)
+    session_path = tmp_git_repo / ".deviate" / "session.json"
+    session_path.parent.mkdir()
+    session = SessionState(current_phase="JUDGE", active_issue_id="ISS-ADH-059")
+    session.save(session_path)
+    task = {"id": "TSK-059-01", "head_sha": head_sha, "recovery_ref": "recover/ref"}
+    manifest = HandoverManifest(
+        phase="JUDGE",
+        status="PASS",
+        task_id="TSK-059-01",
+        verdict="COMPLIANCE_VIOLATION",
+        next_action="revert_green",
+        rationale="missing RED boundary",
+    )
+    with (
+        patch(
+            "deviate.cli.micro._commit_judge_feedback_and_advance"
+        ) as feedback_commit,
+        chdir(tmp_git_repo),
+        pytest.raises(Exception) as excinfo,
+    ):
+        _apply_judge_verdict(
+            task,
+            tmp_path / "tasks.jsonl",
+            session,
+            session_path,
+            Console(file=io.StringIO()),
+            manifest,
+            injected_diff="",
         )
 
-        red_sha = _seed_red_green(repo)
-        green_sha = _current_head(repo)
-        pre_red_sha = subprocess.run(
-            ["git", "rev-parse", f"{red_sha}^"],
-            cwd=repo,
-            env=_git_env(),
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        task = {
-            "id": _GATE_TASK_ID,
-            "issue_id": _GATE_ISSUE_ID,
-            "description": "ISS-ADH-060 missing reset hook",
-            "status": "GREEN",
-            "execution_mode": "TDD",
-        }
-        if test_strategy is not None:
-            task["test_strategy"] = test_strategy
-        ledger_path = repo / "specs" / "adhoc" / "060-judge-revert-red" / "tasks.jsonl"
-        session = SessionState(
-            current_phase="GREEN",
-            red_commit_sha=red_sha,
-            active_issue_id=_GATE_ISSUE_ID,
-        )
-        session_path = repo / ".deviate" / "session.json"
-        session_path.parent.mkdir(parents=True, exist_ok=True)
-        manifest = _gate_manifest(
-            verdict="COMPLIANCE_VIOLATION",
-            next_action="revert_red",
-            evidence=[_gate_evidence()],
-            train_feedback="COMPLIANCE_VIOLATION: RED test is wrong, re-author it.",
-        )
-        buf = io.StringIO()
-        console = Console(file=buf, force_terminal=False, width=200)
-        with (
-            chdir(repo),
-            patch(
-                "deviate.cli.micro._invoke_agent",
-                return_value=(manifest, ""),
-            ),
-            patch(
-                "deviate.cli.micro._build_auto_prompt",
-                return_value="test prompt",
-            ),
-            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
-            patch(
-                "deviate.cli.micro._run_pytest",
-                return_value=subprocess.CompletedProcess(
-                    args=[], returncode=0, stdout="", stderr=""
-                ),
-            ),
-        ):
-            session_out = _run_judge_phase(
-                task, ledger_path, session, session_path, console
-            )
-        expected_ref = _recovery_branch_for(_GATE_TASK_ID, 1)
-        return session_out, green_sha, pre_red_sha, expected_ref
+    text = str(excinfo.value)
+    assert "DEVIATDD_BUG" in text
+    assert f'head_sha="{head_sha}"' in text
+    assert 'recovery_ref="recover/ref"' in text
+    assert "/deviate-green" in text
+    assert "HEAD~1" not in text
+    assert _current_head(tmp_git_repo) == head_sha
+    assert feedback_commit.call_count == 0
 
-    @pytest.mark.behavioral
-    def test_revert_red_missing_reset_lands_git_reset(self, tmp_git_repo: Path) -> None:
-        """AC-PLAN-001: HEAD resets to ``reset_to`` with no reset task."""
-        session, green_sha, pre_red_sha, expected_ref = self._run_revert_red_judge(
-            tmp_git_repo, test_strategy="integration"
+
+@pytest.mark.behavioral
+def test_judge_empty_red_boundary_keeps_empty_evidence(
+    tmp_git_repo: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from deviate.cli.micro import _apply_judge_verdict
+
+    session_path = tmp_git_repo / ".deviate" / "session.json"
+    session_path.parent.mkdir()
+    session = SessionState(current_phase="JUDGE", active_issue_id="ISS-ADH-059")
+    session.save(session_path)
+    task = {"id": "TSK-059-01", "head_sha": None, "recovery_ref": None}
+    manifest = HandoverManifest(
+        phase="JUDGE",
+        status="PASS",
+        task_id="TSK-059-01",
+        verdict="COMPLIANCE_VIOLATION",
+        next_action="revert_green",
+        rationale="missing RED boundary",
+    )
+    monkeypatch.setattr(
+        "deviate.cli.micro._commit_judge_feedback_and_advance",
+        lambda *args, **kwargs: pytest.fail("feedback commit must be skipped"),
+    )
+
+    with chdir(tmp_git_repo), pytest.raises(Exception) as excinfo:
+        _apply_judge_verdict(
+            task,
+            tmp_path / "tasks.jsonl",
+            session,
+            session_path,
+            Console(file=io.StringIO()),
+            manifest,
+            injected_diff="",
         )
 
-        assert _parent_head(tmp_git_repo) == pre_red_sha
-        assert _ref_exists(tmp_git_repo, expected_ref)
-        assert _ref_sha(tmp_git_repo, expected_ref) == green_sha
-        assert session.pending_judge_action == "revert_red"
-
-    @pytest.mark.behavioral
-    def test_missing_reset_report_carries_recovery_trace(
-        self, tmp_git_repo: Path
-    ) -> None:
-        """AC-PLAN-003: report carries ``head_sha``/``reset_to``/``recovery_ref``."""
-        from deviate.core.run_logger import read_verdicts_records
-        from tests.unit.test_micro.test_judge import _GATE_ISSUE_ID, _GATE_TASK_ID
-
-        session, green_sha, pre_red_sha, expected_ref = self._run_revert_red_judge(
-            tmp_git_repo, test_strategy="integration"
-        )
-
-        rows = read_verdicts_records(tmp_git_repo, _GATE_ISSUE_ID, _GATE_TASK_ID)
-        assert rows, "expected a verdicts.jsonl row for the JUDGE application"
-        row = rows[-1]
-        assert row.get("head_sha") == green_sha
-        assert row.get("reset_to") == pre_red_sha
-        assert row.get("recovery_ref") == expected_ref
-        assert session.red_commit_sha == ""
-
-    @pytest.mark.behavioral
-    def test_unit_task_rollback_skips_reset_hook(self, tmp_git_repo: Path) -> None:
-        """AC-PLAN-002 guard: unit tasks skip ``mise run reset`` with no error."""
-        from unittest.mock import patch
-
-        with patch(
-            "deviate.cli.micro._execute_test_command",
-            side_effect=AssertionError("reset hook must not run for unit tasks"),
-        ):
-            session, _green_sha, pre_red_sha, _expected_ref = (
-                self._run_revert_red_judge(tmp_git_repo, test_strategy="unit")
-            )
-
-        assert _parent_head(tmp_git_repo) == pre_red_sha
-        assert session.pending_judge_action == "revert_red"
+    text = str(excinfo.value)
+    assert "DEVIATDD_BUG" in text
+    assert 'head_sha=""' in text
+    assert 'recovery_ref=""' in text
+    assert "/deviate-green" in text
+    assert "HEAD~1" not in text
