@@ -3377,9 +3377,7 @@ def _is_fatal_missing_revert_green_boundary(action: str, exc: BaseException) -> 
         return True
     if "ENV_NOT_READY" in text:
         return True
-    return action == "revert_green" and (
-        "ROLLBACK_BOUNDARY_MISSING" in text or "DEVIATDD_BUG" in text
-    )
+    return action == "revert_green" and "ROLLBACK_BOUNDARY_MISSING" in text
 
 
 def _require_green_entry_red_sha(root: Path, session: SessionState, tid: str) -> None:
@@ -4810,16 +4808,13 @@ def _apply_judge_verdict(
         except Exception as e:
             if _is_fatal_missing_revert_green_boundary(action, e):
                 if action == "revert_green" and "ROLLBACK_BOUNDARY_MISSING" in str(e):
-                    rollback = _RollbackTrace(
-                        head_sha=str(task.get("head_sha") or ""),
-                        reset_to="",
-                        recovery_ref=str(task.get("recovery_ref") or ""),
-                    )
+                    head_sha = str(task.get("head_sha") or "")
+                    recovery_ref = str(task.get("recovery_ref") or "")
                     _record_reject_verdict()
                     raise PhaseFailedError(
                         f"DEVIATDD_BUG: ROLLBACK_BOUNDARY_MISSING; "
-                        f'head_sha="{rollback.head_sha}" '
-                        f'recovery_ref="{rollback.recovery_ref}" '
+                        f'head_sha="{head_sha}" '
+                        f'recovery_ref="{recovery_ref}" '
                         "Recommend /deviate-green."
                     ) from e
                 _record_reject_verdict()
