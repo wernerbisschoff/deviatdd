@@ -135,6 +135,7 @@ def _session(worktree: Path, issue_id: str = _ISSUE_ID) -> None:
 
 
 class TestConvergePackOptIn:
+    @pytest.mark.behavioral
     def test_converge_is_optional_pack_not_default(self) -> None:
         assert OPTIONAL_PACKS["converge"] == ("deviate-converge",)
         assert "deviate-converge" not in commands_for_packs()
@@ -148,6 +149,7 @@ class TestConvergePackOptIn:
         assert (commands / "deviate-red.md").is_file()
         assert not (commands / "deviate-converge.md").exists()
 
+    @pytest.mark.behavioral
     def test_setup_packs_converge_installs_slash_command(self, tmp_path: Path) -> None:
         with chdir(tmp_path):
             result = runner.invoke(
@@ -156,6 +158,7 @@ class TestConvergePackOptIn:
         assert result.exit_code == 0, result.output
         assert (tmp_path / ".opencode" / "commands" / "deviate-converge.md").is_file()
 
+    @pytest.mark.behavioral
     def test_unknown_pack_still_fails_closed(self, tmp_path: Path) -> None:
         with chdir(tmp_path):
             result = runner.invoke(
