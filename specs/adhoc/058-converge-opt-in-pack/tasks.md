@@ -145,6 +145,12 @@
     - Correction: Add focused tests in tests/unit/test_cli/test_converge.py for selected or installed Converge, appended-task re-drain, clean termination, and downstream phase ordering.
     - Verification: Run mise unit and confirm the new tests fail from missing runner behavior, not collection or setup errors.
     - Boundary: Change tests only. Keep the scope limited to AC-PLAN-006.
+  - **Judge Feedback**: The next GREEN attempt must:
+    - Requirement: AC-PLAN-006 requires a clean Converge loop followed by walkthrough, review, and PR.
+    - Evidence: `globals().get` returns no runner when a required phase is unavailable, and the `callable` guard then skips that phase without an error.
+    - Correction: Update `src/deviate/cli/__init__.py` to use the established downstream phase interfaces directly, or raise a named diagnostic when one is unavailable. Keep all three phases outside the Converge loop.
+    - Verification: Run `mise unit` and confirm the runner records Micro, Converge, repeated Micro, clean Converge, walkthrough, review, and PR in that order.
+    - Boundary: Preserve the RED test and optional Converge behavior. Do not modify tests, ledgers, or unrelated phase workflows.
 ## Phase 5: Full application verification
 **Goal**: Verify the complete Converge application surface after all slices pass.
 
