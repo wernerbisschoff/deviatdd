@@ -168,6 +168,7 @@ class TestConvergePackOptIn:
 
 
 class TestConvergePre:
+    @pytest.mark.behavioral
     def test_pre_emits_ready_contract_with_read_set(self, tmp_git_repo: Path) -> None:
         brief, plan, tasks = _seed_issue(tmp_git_repo, filled_constitution=True)
         assert plan is not None
@@ -180,13 +181,13 @@ class TestConvergePre:
         contract = json.loads(result.stdout)
         assert contract["status"] == "READY"
         assert contract["issue_id"] == _ISSUE_ID
-        assert contract["issue_brief_path"] == str(brief.resolve())
-        assert contract["plan_path"] == str(plan.resolve())
-        assert contract["tasks_path"] == str(tasks.resolve())
-        assert contract["constitution_path"] == str(
-            (tmp_git_repo / "specs" / "constitution.md").resolve()
-        )
+        assert contract["issue_brief_path"] == str(brief.relative_to(tmp_git_repo))
+        assert contract["plan_path"] == str(plan.relative_to(tmp_git_repo))
+        assert contract["tasks_path"] == str(tasks.relative_to(tmp_git_repo))
+        assert contract["constitution_path"] == "specs/constitution.md"
         assert "src/deviate/core/commands.py" in contract["in_scope_paths"]
+        for key in ("issue_brief_path", "plan_path", "tasks_path", "constitution_path"):
+            assert not contract[key].startswith("/")
         assert contract["pending_task_ids"] == []
         assert "diff" not in contract
         assert "prd_path" not in contract
