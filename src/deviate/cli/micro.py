@@ -6712,6 +6712,11 @@ def record_checkpoint_verdict(task: dict, handover: dict, ledger_path: Path) -> 
         ok, reason = validate_checkpoint_proof(handover)
         if not ok:
             code, text = "CHECKPOINT_PROOF_INVALID", reason
+    if not code and str(handover.get("status", "")).upper() != "PASS":
+        code, text = (
+            "CHECKPOINT_FAILED",
+            handover.get("rationale") or "checkpoint did not pass",
+        )
     if code:
         _append_checkpoint_row(
             task,
@@ -6725,7 +6730,8 @@ def record_checkpoint_verdict(task: dict, handover: dict, ledger_path: Path) -> 
         handover.get("criterion_coverage") or handover.get("declared_criteria") or []
     )
     raw_evidence = handover.get("evidence") or []
-    items = [{"ac": c} for c in criteria] or [{"ac": "checkpoint-proof"}]
+    items = [item for item in raw_evidence if isinstance(item, dict) and item.get("ac")]
+    items = items or [{"ac": c} for c in criteria] or [{"ac": "checkpoint-proof"}]
     if (
         raw_evidence
         and isinstance(raw_evidence[0], dict)
@@ -6780,7 +6786,16 @@ def _run_checkpoint_phase(
         "checkpoint", _models if isinstance(_models, dict) else {}
     )
     try:
-        backend.invoke(prompt, model=model)
+        handover = backend.invoke(prompt, model=model)
+        if handover.phase.upper() != "CHECKPOINT" or handover.parse_errors:
+            _append_checkpoint_row(
+                task,
+                "CHECKPOINT_FAILED",
+                ledger_path,
+                reason="CHECKPOINT_HANDOVER_INVALID",
+            )
+            return
+        record_checkpoint_verdict(task, handover.model_dump(), ledger_path)
     except Exception as exc:
         kind = type(exc).__name__ or "AGENT_ERROR"
         _append_checkpoint_row(task, "CHECKPOINT_FAILED", ledger_path, reason=kind)

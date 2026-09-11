@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Trim generated artifacts and their prompts: PRD drops the flow essay, sharding-strategy plan, and duplicate decision logs (target ≤250 lines); plan drops to 5 sections with conditional Data Flow; tasks drops per-task time estimates, detail quotas, and static Universal boilerplate; JUDGE and REFACTOR manifests drop unread fields; explore/research sections turn conditional with row caps.
 
 ### Fixed
+- **Verification tasks now record their verdict.** The checkpoint runner persists passing proof as `COMPLETED` instead of leaving `CHECKPOINT_STARTED`. Failed or incomplete responses record `CHECKPOINT_FAILED`.
 - **REFACTOR reports commit failures instead of success.** The shared post kernel and manual command reject uncommitted files after Git fails. Remove redundant post-commit ledger and session updates.
 - **Manual `deviate red post` and auto `_run_red_phase` share one no-failing-test adjudication contract.** A RED run that collects no failing test routes to JUDGE with the same `failure_kind: no_failing_test` discriminator and forward routes on either surface instead of dying in a surface-specific error. Pinned by `tests/unit/test_micro/test_output_filter.py`.
 

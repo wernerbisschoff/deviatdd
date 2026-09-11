@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -97,3 +98,34 @@ class TestCheckpointDispatch:
             micro_mod._dispatch_task(task, ledger, Console(quiet=True))
         mock_tdd.assert_called_once()
         mock_cp.assert_not_called()
+
+
+@pytest.mark.behavioral
+@pytest.mark.parametrize(
+    ("status", "results", "expected"),
+    [
+        ("PASS", [{"check": "mise unit", "ok": True}], "COMPLETED"),
+        ("FAIL", [{"check": "mise unit", "ok": False}], "CHECKPOINT_FAILED"),
+        ("PASS", [], "CHECKPOINT_FAILED"),
+    ],
+)
+def test_checkpoint_dispatch_records_terminal_verdict(
+    tmp_path, status, results, expected
+):
+    ledger = tmp_path / "tasks.jsonl"
+    manifest = HandoverManifest(
+        phase="CHECKPOINT",
+        status=status,
+        results=results,
+        declared_commands=["mise unit"],
+        command_reports=[{"command": "mise unit", "exit_code": 0}],
+        evidence=[
+            {"ac": "verification", "test_path": "tests/", "test_quote": "1 passed"}
+        ],
+    )
+    with patch.object(micro_mod.AgentBackend, "invoke", return_value=manifest):
+        micro_mod._dispatch_task(_checkpoint_task(), ledger, Console(quiet=True))
+    rows = [json.loads(line) for line in ledger.read_text().splitlines()]
+    assert [row["status"] for row in rows] == ["CHECKPOINT_STARTED", expected]
+    if expected == "COMPLETED":
+        assert rows[-1]["evidence"]["items"][0]["test_quote"] == "1 passed"

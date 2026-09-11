@@ -249,6 +249,10 @@ chains `deviate meso run` with `deviate micro run --all` inside the created work
 see `DeviaTDD-api.md` §5 for the orchestration contract.:
 
 - **TDD tasks** (`execution_mode: "TDD"`): Full RED -> GREEN -> JUDGE -> REFACTOR cycle via `_run_tdd_cycle()`. C1 (`deviate` CLI) owns GREEN entry: `_run_green_phase` invokes the GREEN agent only when `session.red_commit_sha` is a standing RED-phase failing-test commit. After `no_failing_test` / `revert_red` / `no_failing_test_adjudicated`, the next `INVOKE_AGENT` is RED, or the loop raises `TRAIN_EXHAUSTED` / `PhaseFailedError`. TDD `revert_green` with an empty SHA is fatal (`ROLLBACK_BOUNDARY_MISSING`) and does not train GREEN.
+- **Verification tasks** (`task_type: "Verification_Batch"`): `_run_checkpoint_phase()` records `CHECKPOINT_STARTED` and invokes the checkpoint agent.
+  It passes the returned manifest to `record_checkpoint_verdict()`.
+  Valid `CHECKPOINT`/`PASS` proof records `COMPLETED` with evidence; failed or incomplete proof records `CHECKPOINT_FAILED`.
+  The checkpoint prompt requires command reports, criterion coverage, and typed evidence citations.
 - **Non-TDD tasks** (`execution_mode: "DIRECT" | "E2E"`): Immediate completion via
   `_run_execute_phase()`, which marks the task COMPLETED without test generation.
 - **Operator output:** RED, GREEN, JUDGE, and REFACTOR use one shared `PhaseCallout`

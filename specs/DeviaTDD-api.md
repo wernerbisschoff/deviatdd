@@ -1266,6 +1266,10 @@ uses the same `_resolve_task_context` selector as the other micro pres.
     extract it for REFACTOR); structured Test Integrity and blocking violation
     categories still route as rejects. EXECUTE and
     IMMEDIATE judge paths stay ungated.
+  * **Verification tasks:** `Verification_Batch` uses CHECKPOINT, not RED/GREEN.
+    The runner records `CHECKPOINT_STARTED`, then validates the returned handover.
+    A `CHECKPOINT`/`PASS` response with complete proof records `COMPLETED` with evidence.
+    Failed, malformed, or incomplete responses record `CHECKPOINT_FAILED`.
   * **Resume from Mid-Phase:** Latest `tasks.jsonl` status is authoritative
     for where a pinned or bare `deviate micro run` re-enters
     (`_start_phase_from_status`). `TASK_ALREADY_DONE` prints and exits 0
