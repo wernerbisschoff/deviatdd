@@ -2957,13 +2957,7 @@ def _maybe_reset_isolated_env(root: Path, task: dict | None) -> None:
 
 def _reset_isolated_env_revert_red(root: Path, task: dict | None, c: Console) -> None:
     """Reset env after revert_red; gate re-entry when hook is missing."""
-    try:
-        _maybe_reset_isolated_env(root, task)
-    except EnvNotReadyError as e:
-        if "not defined" not in str(e):
-            raise
-        _log_run("ENV_RESET_MISSING", error=str(e)[:500])
-        c.print(f"  [yellow]ENV_NOT_READY[/] {e}")
+    _maybe_reset_isolated_env(root, task)
 
 
 def _preserve_agent_work(
@@ -4394,19 +4388,45 @@ def _run_judge_phase(
         )
         _raise_judge_manifest_invalid(tid, schema_errors)
     assert manifest is not None
-    return _apply_judge_verdict(
-        task,
-        ledger_path,
-        session,
-        session_path,
-        c,
-        manifest,
-        injected_diff=diff,
-        declared_paths=declared_paths,
-        red_baseline=red_baseline,
-        no_refactor=no_refactor,
-        assume_yes=True,
-    )
+    try:
+        return _apply_judge_verdict(
+            task,
+            ledger_path,
+            session,
+            session_path,
+            c,
+            manifest,
+            injected_diff=diff,
+            declared_paths=declared_paths,
+            red_baseline=red_baseline,
+            no_refactor=no_refactor,
+            assume_yes=True,
+        )
+    except EnvNotReadyError as _missing_reset_err:
+        if "not defined" not in str(_missing_reset_err):
+            raise
+        c.print(f"  [yellow]ENV_NOT_READY[/] {_missing_reset_err}")
+        _log_run("ENV_RESET_MISSING", task_id=tid, error=str(_missing_reset_err)[:500])
+        subprocess.run(
+            ["git", "add", "--", "specs"],
+            cwd=root,
+            capture_output=True,
+            env=_git_env(),
+        )
+        subprocess.run(
+            [
+                "git",
+                "commit",
+                "-m",
+                f"docs({tid}): add judge feedback for retry",
+                "--no-verify",
+                "--allow-empty",
+            ],
+            cwd=root,
+            capture_output=True,
+            env=_git_env(),
+        )
+        return SessionState.load(session_path)
 
 
 def _confirm_manual_judge_revert(
@@ -4816,7 +4836,32 @@ def _apply_judge_verdict(
                 attempt=rollback_attempts,
             )
             _maybe_reset_isolated_env(root, task)
-        except EnvNotReadyError:
+        except EnvNotReadyError as _env_err:
+            if action == "revert_red" and "not defined" in str(_env_err):
+                session.red_commit_sha = ""
+                session.pending_judge_action = "revert_red"
+                session.train_feedback = feedback
+                session.judge_rejected = True
+                session = session.force_transition_to("RED")
+                session.save(session_path)
+                _append_judge_revert_jsonl(
+                    root,
+                    task,
+                    feedback,
+                    "revert_red",
+                    ledger_path,
+                    rollback=rollback,
+                )
+                _announce_reverted()
+                _record_reject_verdict()
+                raise EnvNotReadyError(
+                    f"ENV_NOT_READY: mise run reset is not defined. "
+                    f"head_sha={rollback.head_sha} "
+                    f"reset_to={rollback.reset_to} "
+                    f"recovery_ref={rollback.recovery_ref}. "
+                    f"Add a `reset` mise task that recreates the isolated environment "
+                    f"so the next RED/GREEN does not loop on a discarded catalog revision."
+                ) from _env_err
             _record_reject_verdict()
             raise
         except Exception as e:
