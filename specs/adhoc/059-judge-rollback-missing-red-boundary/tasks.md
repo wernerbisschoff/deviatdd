@@ -21,6 +21,12 @@
     - **Green**: Update `_require_revert_green_boundary` and `_execute_rollback` in `src/deviate/cli/micro.py` to reject missing boundaries without inferred Git resets. Preserve `TaskRecord.head_sha` and `TaskRecord.recovery_ref` as explicit nullable evidence.
     - **Acceptance**: Valid rollback behavior remains unchanged when `session.red_commit_sha` exists.
 
+  - **Judge Feedback**: The next RED attempt must:
+    - Requirement: AC-PLAN-001, AC-PLAN-002, and AC-PLAN-003 require runner-level missing-boundary behavior.
+    - Evidence: The current tests call _append_judge_revert_jsonl directly and do not exercise validation, rollback prevention, or JUDGE classification.
+    - Correction: Replace the helper-only assertions in tests/unit/test_micro/test_rollback_safety.py with unit tests that invoke the real boundary and JUDGE handling paths for populated and empty evidence.
+    - Verification: Run mise unit and confirm the tests fail before implementation, then assert DEVIATDD_BUG, preserved fields, unchanged HEAD, no HEAD~1, no retry, and no feedback commit.
+    - Boundary: Keep the test strategy unit-only and preserve valid revert_green behavior when session.red_commit_sha exists.
 - TSK-059-02: Stop JUDGE advancement after a missing rollback boundary
   - **Type**: Bugfix
   - **Mode**: TDD
