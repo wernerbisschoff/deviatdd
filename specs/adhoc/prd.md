@@ -858,3 +858,13 @@
   3. AC-ADHOC-058-03 / AO-058-03: Gaps append one Convergence phase plus PENDING ledger rows; never rewrite tasks or edit application code
   4. AC-ADHOC-058-04 / AO-058-04: Findings use missing|partial|contradicts|unrequested; clean path leaves `tasks.md` byte-unchanged
   5. AC-ADHOC-058-05 / AO-058-05: Operator path is Micro drain → converge → (re-Micro if needed) → walkthrough → review → `/deviate-pr`
+
+## FR-ADHOC-059: Preserve rollback recovery evidence when RED boundary metadata is missing
+- **Description**: When JUDGE requests `revert_green` without `session.red_commit_sha`, the micro runner reports a distinct harness failure and preserves available rollback evidence. The DeviaTDD skill classifies the failure as `DEVIATDD_BUG` and recommends `/deviate-green` after evidence preservation.
+- **Preconditions**: `deviate micro run` has a JUDGE rejection with `next_action` `revert_green`, an available `head_sha` or `recovery_ref`, and missing RED boundary metadata.
+- **Inputs/Outputs**: Input — task session, JUDGE action, `head_sha`, and `recovery_ref`. Output — validated failure details with recovery evidence, no unsafe `HEAD~1` fallback, and a preserved retry path.
+- **User Stories**:
+  1. US-059-01: As a DeviaTDD operator, I want missing RED rollback metadata reported as a harness bug with recovery evidence so I can restore the task safely.
+- **Acceptance Outline**:
+  1. AC-ADHOC-059-01 / AO-059-01: A missing `red_commit_sha` on `revert_green` returns a distinct harness failure containing `head_sha` and `recovery_ref` when available.
+  2. AC-ADHOC-059-02 / AO-059-02: The runner never falls back to `HEAD~1`, silently retries, or discards rollback evidence; the skill reports `DEVIATDD_BUG` and recommends `/deviate-green` after evidence preservation.
