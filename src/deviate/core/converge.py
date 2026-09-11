@@ -313,7 +313,7 @@ def apply_findings(
         for record in records:
             if not append_record(record, ledger_path):
                 raise OSError(f"duplicate or rejected {record.id}")
-    except Exception as exc:
+    except OSError as exc:
         return ConvergeApplyResult(
             status="CONVERGED",
             error=f"{LEDGER_APPEND_FAILED} {exc}",
