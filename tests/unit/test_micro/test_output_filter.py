@@ -290,9 +290,13 @@ class TestPromptRetryRegression:
 
         import deviate.cli.micro as micro
 
+        # Reconciled with 005-003: the auto surface reaches the shared helper
+        # through its kernel (dry_run guard); the runner itself keeps the
+        # non-blocking advisory checkpoint instead of a JUDGE route.
         assert "_adjudicate_red_no_failing_test" in inspect.getsource(
-            micro._run_red_phase
+            micro._red_post_kernel
         )
+        assert "_RedPhaseOutcome" in inspect.getsource(micro._run_red_phase)
         red_post_src = inspect.getsource(micro._red_post_kernel)
         assert "RedMustPassError" in red_post_src
         assert "failure_kind: already_satisfied" in red_post_src

@@ -109,7 +109,18 @@ class TestManualRedPostSharedHelper:
 
 class TestAutoRedPhaseSharedHelper:
     def test_zero_failing_routes_through_shared_helper(self, tmp_path: Path):
-        task = {"id": "TSK-004-01", "issue_id": "ISS-001-004"}
+        """Reconciled with 005-003: the kernel owns the RedMustPassError guard
+        through the shared helper (dry_run), while the auto runner keeps
+        the non-blocking advisory checkpoint (no JUDGE route)."""
+        from deviate.cli.micro import RedHandoffAdvisory
+
+        task = {
+            "id": "TSK-004-01",
+            "issue_id": "ISS-001-004",
+            "description": "RED phase task",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
         ledger_path = tmp_path / "tasks.jsonl"
         session = SessionState(current_phase="IDLE")
         session_path = tmp_path / ".deviate" / "session.json"
@@ -133,13 +144,22 @@ class TestAutoRedPhaseSharedHelper:
                 return_value=(manifest, ""),
             ),
             patch("deviate.cli.micro._run_test_cmd", return_value=passing),
+            patch("deviate.cli.micro._run_pytest", return_value=passing),
+            patch("deviate.cli.micro._run_format_cmd", return_value=passing),
+            patch("deviate.cli.micro.append_task_transition"),
+            patch("deviate.cli.micro._commit_phase", return_value=True),
+            patch("deviate.cli.micro._verify_clean_worktree"),
             patch(
                 "deviate.cli.micro._adjudicate_red_no_failing_test",
-                return_value=session,
+                wraps=__import__(
+                    "deviate.cli.micro", fromlist=["_adjudicate_red_no_failing_test"]
+                )._adjudicate_red_no_failing_test,
             ) as spy,
         ):
-            _run_red_phase(
+            out = _run_red_phase(
                 task, ledger_path, session, session_path, Console(quiet=True)
             )
-            assert spy.call_count == 1
-            assert spy.call_args.kwargs.get("dry_run", False) is False
+            assert spy.call_count >= 1
+            assert all(c.kwargs.get("dry_run") is True for c in spy.call_args_list)
+            assert isinstance(out[1], RedHandoffAdvisory)
+            assert out[1].passes is True
