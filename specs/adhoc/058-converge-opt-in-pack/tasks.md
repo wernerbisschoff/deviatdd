@@ -42,6 +42,12 @@
     - **Edge Cases**: Skip constitution checks when its template is unfilled and reject absolute paths in the emitted contract.
     - **Acceptance**: Contract generation meets the 500ms issue-level emission limit.
 
+  - **Judge Feedback**: The next RED attempt must:
+    - Requirement: AC-PLAN-002 requires a bounded readiness contract with repository-relative paths.
+    - Evidence: The RED test adds relative-path assertions while the existing test still expects absolute paths.
+    - Correction: Reconcile the test suite to one explicit path contract in tests/unit/test_cli/test_converge.py, then add a failing assertion for the selected contract.
+    - Verification: Run mise unit; expect failure from the missing or incorrect behavior, not contradictory test expectations.
+    - Boundary: Change tests only. Preserve the AC-PLAN-002 scope and do not edit production code.
 - TSK-058-03: Reject Converge when prerequisites or Micro work are unavailable
   - **Type**: Bugfix
   - **Mode**: TDD
