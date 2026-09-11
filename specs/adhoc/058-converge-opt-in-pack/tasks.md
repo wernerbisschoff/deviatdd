@@ -139,6 +139,12 @@
     - Correction: Add sociable unit tests in tests/unit/test_cli/test_converge.py that exercise run_command and assert selected or installed Converge handoff, repeated Micro execution after appended tasks, clean-loop termination, and walkthrough/review/PR execution outside the loop.
     - Verification: Run the stamped unit file and confirm the new tests fail because the required runner behavior is absent, not because of collection or syntax errors.
     - Boundary: Change tests only. Keep the scope limited to tests/unit/test_cli/test_converge.py.
+  - **Judge Feedback**: The next RED attempt must:
+    - Requirement: AC-PLAN-006 requires Micro drain, repeated Converge and Micro passes until clean, then walkthrough, review, and PR.
+    - Evidence: The current test mocks the Converge runner and asserts only one Micro event, with no repeated-task or downstream phase execution.
+    - Correction: Add focused tests in tests/unit/test_cli/test_converge.py for selected or installed Converge, appended-task re-drain, clean termination, and downstream phase ordering.
+    - Verification: Run mise unit and confirm the new tests fail from missing runner behavior, not collection or setup errors.
+    - Boundary: Change tests only. Keep the scope limited to AC-PLAN-006.
 ## Phase 5: Full application verification
 **Goal**: Verify the complete Converge application surface after all slices pass.
 
