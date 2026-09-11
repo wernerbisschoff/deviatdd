@@ -273,7 +273,8 @@ def apply_findings(
     *,
     append_record=append_task_record,
 ) -> ConvergeApplyResult:
-    if not findings:
+    ordered_findings = sort_findings(findings)
+    if not ordered_findings:
         return ConvergeApplyResult(status="CONVERGED")
     issue_id = resolve_converge_issue_id(root)
     tasks_path = resolve_issue_tasks_path(root, issue_id)
@@ -295,9 +296,9 @@ def apply_findings(
     ledger_text = (
         ledger_path.read_text(encoding="utf-8") if ledger_path.is_file() else ""
     )
-    ids = next_task_ids(issue_id, f"{text}\n{ledger_text}", len(findings))
+    ids = next_task_ids(issue_id, f"{text}\n{ledger_text}", len(ordered_findings))
     records: list[TaskRecord] = []
-    for task_id, finding in zip(ids, findings, strict=True):
+    for task_id, finding in zip(ids, ordered_findings, strict=True):
         records.append(
             TaskRecord(
                 id=task_id,
@@ -319,7 +320,7 @@ def apply_findings(
         )
     cards = "".join(
         _task_card(task_id, finding)
-        for task_id, finding in zip(ids, findings, strict=True)
+        for task_id, finding in zip(ids, ordered_findings, strict=True)
     )
     section = (
         f"\n## Phase {phase}: Convergence\n"
