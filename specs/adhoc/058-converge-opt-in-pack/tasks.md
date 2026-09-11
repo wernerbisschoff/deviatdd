@@ -69,6 +69,12 @@
     - Correction: Implement readiness validation in src/deviate/cli/converge.py and src/deviate/core/converge.py. Return one deterministic CONVERGE_NOT_READY diagnostic for each unavailable condition.
     - Verification: Run mise unit; expect the missing brief, plan, tasks, and pending queue tests to pass with non-zero results.
     - Boundary: Preserve the RED tests and restrict changes to the assigned implementation files.
+  - **Judge Feedback**: The next GREEN attempt must:
+    - Requirement: AC-PLAN-003 requires actionable readiness rejection.
+    - Evidence: GREEN changed only the ledger transition and added no production implementation.
+    - Correction: Add readiness validation to src/deviate/cli/converge.py and src/deviate/core/converge.py before agent handoff or writes.
+    - Verification: Run mise unit; expect missing brief, plan, tasks, and pending queue tests to pass with non-zero results.
+    - Boundary: Preserve the RED tests and restrict implementation changes to the assigned source files.
 ## Phase 3: Append-only findings
 **Goal**: Classify findings and append Convergence tasks without changing prior state.
 
