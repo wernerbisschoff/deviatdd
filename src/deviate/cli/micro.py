@@ -1114,6 +1114,8 @@ def _find_all_pending_tasks(
                 "status": "PENDING",
                 "execution_mode": mode,
             }
+            if task_type:
+                pending["task_type"] = task_type
             if test_strategy:
                 pending["test_strategy"] = test_strategy
             results.append(
@@ -6409,6 +6411,17 @@ class RedPhaseError(Exception):
     pass
 
 
+def _run_checkpoint_phase(
+    task: dict,
+    ledger_path: Path,
+    c: Console,
+    agent: str | None = None,
+    monitor: OrchestrationMonitor | None = None,
+) -> None:
+    """Checkpoint entrypoint for Verification_Batch tasks (full impl in later slice)."""
+    return None
+
+
 def _dispatch_task(
     task: dict,
     ledger_path: Path,
@@ -6422,8 +6435,10 @@ def _dispatch_task(
 ) -> None:
     global _review_task_id
     _review_task_id = task.get("id", "?")
+    if task.get("task_type") == "Verification_Batch":
+        _run_checkpoint_phase(task, ledger_path, c, agent=agent, monitor=monitor)
+        return
     mode = task.get("execution_mode", "TDD")
-
     if mode == "TDD" and batch_mode:
         description = task.get("description", "")
         if "Failing task" in description:
