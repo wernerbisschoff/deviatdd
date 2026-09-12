@@ -12,6 +12,7 @@ import pytest
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from deviate.core.converge import ConvergenceFinding, apply_findings
 from deviate.core.commands import OPTIONAL_PACKS, commands_for_packs
 from deviate.state.config import SessionState
 from tests.conftest import _git_env
@@ -135,6 +136,7 @@ def _session(worktree: Path, issue_id: str = _ISSUE_ID) -> None:
 
 
 class TestConvergePackOptIn:
+    @pytest.mark.behavioral
     def test_converge_is_optional_pack_not_default(self) -> None:
         assert OPTIONAL_PACKS["converge"] == ("deviate-converge",)
         assert "deviate-converge" not in commands_for_packs()
@@ -148,6 +150,7 @@ class TestConvergePackOptIn:
         assert (commands / "deviate-red.md").is_file()
         assert not (commands / "deviate-converge.md").exists()
 
+    @pytest.mark.behavioral
     def test_setup_packs_converge_installs_slash_command(self, tmp_path: Path) -> None:
         with chdir(tmp_path):
             result = runner.invoke(
@@ -156,6 +159,7 @@ class TestConvergePackOptIn:
         assert result.exit_code == 0, result.output
         assert (tmp_path / ".opencode" / "commands" / "deviate-converge.md").is_file()
 
+    @pytest.mark.behavioral
     def test_unknown_pack_still_fails_closed(self, tmp_path: Path) -> None:
         with chdir(tmp_path):
             result = runner.invoke(
@@ -165,6 +169,7 @@ class TestConvergePackOptIn:
 
 
 class TestConvergePre:
+    @pytest.mark.behavioral
     def test_pre_emits_ready_contract_with_read_set(self, tmp_git_repo: Path) -> None:
         brief, plan, tasks = _seed_issue(tmp_git_repo, filled_constitution=True)
         assert plan is not None
@@ -177,13 +182,13 @@ class TestConvergePre:
         contract = json.loads(result.stdout)
         assert contract["status"] == "READY"
         assert contract["issue_id"] == _ISSUE_ID
-        assert contract["issue_brief_path"] == str(brief.resolve())
-        assert contract["plan_path"] == str(plan.resolve())
-        assert contract["tasks_path"] == str(tasks.resolve())
-        assert contract["constitution_path"] == str(
-            (tmp_git_repo / "specs" / "constitution.md").resolve()
-        )
+        assert contract["issue_brief_path"] == str(brief.relative_to(tmp_git_repo))
+        assert contract["plan_path"] == str(plan.relative_to(tmp_git_repo))
+        assert contract["tasks_path"] == str(tasks.relative_to(tmp_git_repo))
+        assert contract["constitution_path"] == "specs/constitution.md"
         assert "src/deviate/core/commands.py" in contract["in_scope_paths"]
+        for key in ("issue_brief_path", "plan_path", "tasks_path", "constitution_path"):
+            assert not contract[key].startswith("/")
         assert contract["pending_task_ids"] == []
         assert "diff" not in contract
         assert "prd_path" not in contract
@@ -222,13 +227,16 @@ class TestConvergePre:
         dumped = json.dumps(contract)
         assert "explore.md" not in dumped
 
+    @pytest.mark.behavioral
     def test_pre_missing_brief_is_not_ready(self, tmp_git_repo: Path) -> None:
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["converge", "pre"])
 
         assert result.exit_code != 0
+        assert "CONVERGE_NOT_READY" in result.stdout
         assert "brief" in result.stdout.lower()
 
+    @pytest.mark.behavioral
     def test_pre_missing_plan_is_not_ready(self, tmp_git_repo: Path) -> None:
         _seed_issue(tmp_git_repo, with_plan=False)
 
@@ -236,8 +244,10 @@ class TestConvergePre:
             result = runner.invoke(cli, ["converge", "pre"])
 
         assert result.exit_code != 0
+        assert "CONVERGE_NOT_READY" in result.stdout
         assert "plan" in result.stdout.lower()
 
+    @pytest.mark.behavioral
     def test_pre_missing_tasks_is_not_ready(self, tmp_git_repo: Path) -> None:
         _seed_issue(tmp_git_repo, with_tasks=False)
 
@@ -245,8 +255,10 @@ class TestConvergePre:
             result = runner.invoke(cli, ["converge", "pre"])
 
         assert result.exit_code != 0
+        assert "CONVERGE_NOT_READY" in result.stdout
         assert "tasks" in result.stdout.lower()
 
+    @pytest.mark.behavioral
     def test_pre_pending_queue_is_not_ready(self, tmp_git_repo: Path) -> None:
         _seed_issue(tmp_git_repo, pending=True)
 
@@ -479,6 +491,88 @@ class TestConvergePost:
         assert "LEDGER_APPEND_FAILED" in result.stdout
         assert tasks.read_bytes() == before
 
+    @pytest.mark.behavioral
+    def test_second_ledger_failure_preserves_task_text_and_diagnostic(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _, _, tasks = _seed_issue(tmp_git_repo)
+        assert tasks is not None
+        before = tasks.read_bytes()
+        findings = json.dumps(
+            {
+                "findings": [
+                    {
+                        "taxonomy": "missing",
+                        "source_ref": "AC-PLAN-002",
+                        "summary": "first gap",
+                    },
+                    {
+                        "taxonomy": "partial",
+                        "source_ref": "AC-PLAN-003",
+                        "summary": "second gap",
+                    },
+                ]
+            }
+        )
+        calls = 0
+
+        def append_record_with_failure(record, ledger_path):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError("ledger unavailable")
+            return True
+
+        with (
+            chdir(tmp_git_repo),
+            patch(
+                "deviate.cli.converge.append_task_record",
+                side_effect=append_record_with_failure,
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                ["converge", "post", findings],
+            )
+        assert result.exit_code != 0
+        assert "LEDGER_APPEND_FAILED" in result.stdout
+        assert "ledger unavailable" in result.stdout
+        assert tasks.read_bytes() == before
+
+    @pytest.mark.behavioral
+    def test_apply_findings_appends_each_pending_record_in_critical_order(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _seed_issue(tmp_git_repo, filled_constitution=True)
+        calls: list[tuple[str, str]] = []
+        findings = [
+            ConvergenceFinding(
+                taxonomy="partial",
+                source_ref="AC-PLAN-001",
+                summary="ordinary gap",
+            ),
+            ConvergenceFinding(
+                taxonomy="contradicts",
+                source_ref="constitution MUST",
+                summary="critical gap",
+                severity="CRITICAL",
+            ),
+        ]
+
+        def append(record, ledger_path):
+            calls.append((record.id, record.description))
+            return True
+
+        result = apply_findings(tmp_git_repo, findings, append_record=append)
+
+        assert result.status == "APPENDED"
+        assert [task_id for task_id, _ in calls] == [
+            "TSK-058-02",
+            "TSK-058-03",
+        ]
+        assert calls[0][1].startswith("contradicts constitution MUST")
+        assert calls[1][1].startswith("partial AC-PLAN-001")
+
 
 class TestConvergePrompt:
     @pytest.mark.behavioral
@@ -606,3 +700,57 @@ class TestDeviateRunConvergeTail:
 
         assert result.exit_code != 0
         assert "CONVERGE_NOT_READY" in result.output
+
+    @pytest.mark.behavioral
+    def test_converge_finishes_before_walkthrough_review_and_pr(
+        self, tmp_git_repo: Path
+    ) -> None:
+        worktree = self._worktree(tmp_git_repo)
+        events: list[str] = []
+        outcomes = iter(["appended", "converged"])
+
+        def drain(*_args, **_kwargs):
+            events.append("micro")
+
+        def converge_pass(_root: Path) -> str:
+            events.append("converge")
+            return next(outcomes)
+
+        def downstream(name: str):
+            def run(*_args, **_kwargs):
+                events.append(name)
+
+            return run
+
+        with chdir(tmp_git_repo):
+            with (
+                patch("deviate.cli._meso_run", return_value=str(worktree)),
+                patch("deviate.cli._run_all", side_effect=drain),
+                patch(
+                    "deviate.cli._run_converge_pass",
+                    side_effect=converge_pass,
+                ),
+                patch(
+                    "deviate.cli._run_walkthrough",
+                    side_effect=downstream("walkthrough"),
+                    create=True,
+                ),
+                patch(
+                    "deviate.cli._run_review",
+                    side_effect=downstream("review"),
+                    create=True,
+                ),
+                patch("deviate.cli._run_pr", side_effect=downstream("pr"), create=True),
+            ):
+                result = runner.invoke(cli, ["run", "--converge"])
+
+        assert result.exit_code == 0, result.output
+        assert events == [
+            "micro",
+            "converge",
+            "micro",
+            "converge",
+            "walkthrough",
+            "review",
+            "pr",
+        ]

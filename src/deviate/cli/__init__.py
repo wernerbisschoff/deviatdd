@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import chdir
 import importlib.resources
 import re
 import shutil
@@ -50,6 +51,9 @@ from deviate.cli.prune import prune_app
 from deviate.cli.walkthrough import walkthrough_app
 from deviate.cli.converge import converge_app
 from deviate.cli.converge import run_converge_pass as _run_converge_pass
+from deviate.cli.walkthrough import pre as _walkthrough_pre
+from deviate.cli.review import pre as _review_pre
+from deviate.cli.meso import pr as _pr
 from deviate.cli._html import html_app
 from deviate.core.converge import converge_pack_available
 from deviate.core.agent import AGENT_TO_BACKEND as AGENT_TO_BACKEND  # noqa: F401
@@ -1853,6 +1857,7 @@ def run_command(
         raise typer.Exit(code=1)
 
     should_converge = converge or converge_pack_available(worktree_path)
+    converged_clean = False
     while True:
         _drain_micro(worktree_path, console, model=model)
         if not should_converge:
@@ -1879,7 +1884,12 @@ def run_command(
             continue
         if outcome == "converged":
             console.print("[green]CONVERGED[/]")
+            converged_clean = True
         break
+    if should_converge and converged_clean:
+        _run_walkthrough(worktree_path)
+        _run_review(worktree_path)
+        _run_pr(worktree_path)
 
 
 def _drain_micro(worktree_path: Path, console: Console, model: str | None) -> None:
@@ -1889,3 +1899,35 @@ def _drain_micro(worktree_path: Path, console: Console, model: str | None) -> No
     except typer.Exit as exc:
         if exc.exit_code not in (0, None):
             raise
+
+
+def _run_walkthrough(worktree_path: Path) -> None:
+    """Run walkthrough after the optional Converge loop."""
+    from deviate.cli._common import _get_current_branch
+    from deviate.state.config import resolve_base_branch
+
+    with chdir(worktree_path):
+        _walkthrough_pre(
+            base=resolve_base_branch(worktree_path),
+            branch=_get_current_branch(worktree_path),
+        )
+
+
+def _run_review(worktree_path: Path) -> None:
+    """Run review after the optional Converge loop."""
+    from click import Command, Context
+
+    try:
+        with chdir(worktree_path):
+            _review_pre(Context(Command("review")), base=None, branch=None, apply=False)
+    except (Exception, SystemExit):
+        return
+
+
+def _run_pr(worktree_path: Path) -> None:
+    """Run PR preparation after the optional Converge loop."""
+    try:
+        with chdir(worktree_path):
+            _pr("pre")
+    except (Exception, SystemExit):
+        return

@@ -188,7 +188,6 @@ def build_pre_contract(root: Path) -> tuple[dict[str, Any], int]:
     brief = resolve_issue_brief_path(root, issue_id)
     plan = resolve_issue_plan_path(root, issue_id)
     tasks = resolve_issue_tasks_path(root, issue_id)
-    pending = pending_task_ids(root, issue_id)
 
     if brief is None:
         return (
@@ -217,6 +216,7 @@ def build_pre_contract(root: Path) -> tuple[dict[str, Any], int]:
             },
             1,
         )
+    pending = pending_task_ids(root, issue_id)
     if pending:
         return (
             {
@@ -239,15 +239,15 @@ def build_pre_contract(root: Path) -> tuple[dict[str, Any], int]:
         "status": "READY",
         "readiness": "ready",
         "issue_id": issue_id,
-        "issue_brief_path": str(brief.resolve()),
-        "plan_path": str(plan.resolve()),
-        "tasks_path": str(tasks.resolve()),
+        "issue_brief_path": str(brief.relative_to(root)),
+        "plan_path": str(plan.relative_to(root)),
+        "tasks_path": str(tasks.relative_to(root)),
         "in_scope_paths": extract_in_scope_paths(plan_text, tasks_text, brief_text),
         "pending_task_ids": [],
     }
     const_path = root / "specs" / "constitution.md"
     if constitution_is_filled(const_path):
-        contract["constitution_path"] = str(const_path.resolve())
+        contract["constitution_path"] = str(const_path.relative_to(root))
     from datetime import datetime, timezone
 
     contract["timestamp"] = datetime.now(timezone.utc).isoformat()
@@ -273,7 +273,8 @@ def apply_findings(
     *,
     append_record=append_task_record,
 ) -> ConvergeApplyResult:
-    if not findings:
+    ordered_findings = sort_findings(findings)
+    if not ordered_findings:
         return ConvergeApplyResult(status="CONVERGED")
     issue_id = resolve_converge_issue_id(root)
     tasks_path = resolve_issue_tasks_path(root, issue_id)
@@ -295,9 +296,9 @@ def apply_findings(
     ledger_text = (
         ledger_path.read_text(encoding="utf-8") if ledger_path.is_file() else ""
     )
-    ids = next_task_ids(issue_id, f"{text}\n{ledger_text}", len(findings))
+    ids = next_task_ids(issue_id, f"{text}\n{ledger_text}", len(ordered_findings))
     records: list[TaskRecord] = []
-    for task_id, finding in zip(ids, findings, strict=True):
+    for task_id, finding in zip(ids, ordered_findings, strict=True):
         records.append(
             TaskRecord(
                 id=task_id,
@@ -319,7 +320,7 @@ def apply_findings(
         )
     cards = "".join(
         _task_card(task_id, finding)
-        for task_id, finding in zip(ids, findings, strict=True)
+        for task_id, finding in zip(ids, ordered_findings, strict=True)
     )
     section = (
         f"\n## Phase {phase}: Convergence\n"

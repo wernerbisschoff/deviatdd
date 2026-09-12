@@ -9,7 +9,6 @@ from pathlib import Path
 import typer
 
 from deviate.core.converge import (
-    LEDGER_APPEND_FAILED,
     apply_findings,
     build_pre_contract,
     parse_findings_payload,
@@ -51,12 +50,7 @@ def post(
         raise typer.Exit(code=1) from exc
     result = apply_findings(repo, parsed, append_record=append_task_record)
     if result.error:
-        token = (
-            LEDGER_APPEND_FAILED
-            if result.error.startswith(LEDGER_APPEND_FAILED)
-            else result.error
-        )
-        typer.echo(token)
+        typer.echo(result.error)
         raise typer.Exit(code=1)
     payload: dict[str, object] = {
         "status": result.status,
