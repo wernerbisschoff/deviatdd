@@ -114,7 +114,7 @@ def extract_in_scope_paths(*texts: str) -> list[str]:
 
 
 def pending_task_ids(root: Path, issue_id: str | None) -> list[str]:
-    from deviate.cli.micro import _find_all_pending_tasks
+    from deviate.cli.micro.pending import _find_all_pending_tasks
 
     pending = _find_all_pending_tasks(root, issue_id=issue_id)
     return [str(rec.get("id")) for rec, _ in pending if rec.get("id")]

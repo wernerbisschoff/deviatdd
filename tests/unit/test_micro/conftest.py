@@ -53,7 +53,7 @@ def mock_micro_subprocess():
     """Prevent ``deviate.cli.micro`` from running real subprocesses.
 
     This fixture replaces *only* the ``subprocess`` module reference
-    inside ``deviate.cli.micro`` with a mock proxy.  Subprocess calls
+    inside ``deviate.cli.micro.surface`` with a mock proxy.  Subprocess calls
     from test code, fixtures, and non-micro modules still use the
     real ``subprocess`` module, so ``tmp_git_repo``, git setup
     commands, and direct ``subprocess.run`` calls work normally.
@@ -63,7 +63,7 @@ def mock_micro_subprocess():
     pytest subprocesses are blocked with safe defaults.
     """
     with (
-        patch("deviate.cli.micro.subprocess", _MockSubprocess()),
+        patch("deviate.cli.micro.surface.subprocess", _MockSubprocess()),
         patch("deviate.core.agent.subprocess", _MockSubprocess()),
     ):
         yield

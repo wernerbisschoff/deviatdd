@@ -1492,7 +1492,11 @@ class TestInstallDeviatddSkill:
         # tests/test_cli/test_init.py -> ../../  is the repo root.
         repo_root = _Path(__file__).resolve().parents[3]
         micro_path = repo_root / "src" / "deviate" / "cli" / "micro.py"
+        micro_pkg = repo_root / "src" / "deviate" / "cli" / "micro"
         micro_src = micro_path.read_text(encoding="utf-8")
+        if micro_pkg.is_dir():
+            for sub in sorted(micro_pkg.glob("*.py")):
+                micro_src += "\n" + sub.read_text(encoding="utf-8")
         emitted_events = set(re.findall(r'_log_run\(\s*"([A-Z_]+)"', micro_src))
         # Must include the canonical events the SKILL documents.
         for canonical in (

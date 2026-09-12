@@ -64,6 +64,10 @@ def test_no_micro_submodule_imports_the_shim():
 @pytest.mark.behavioral
 def test_public_names_resolve_from_submodules_via_importlib():
     pkg = importlib.import_module("deviate.cli.micro")
+    submodules = [
+        importlib.import_module(f"deviate.cli.micro.{sub}")
+        for sub in ("surface", "pending", "suites")
+    ]
     unresolved = []
     for name in PUBLIC_NAMES:
         obj = getattr(pkg, name, None)
@@ -71,7 +75,11 @@ def test_public_names_resolve_from_submodules_via_importlib():
             unresolved.append(f"{name}: missing on deviate.cli.micro")
             continue
         module = getattr(obj, "__module__", "")
-        if not module.startswith("deviate.cli.micro."):
+        if module.startswith("deviate.cli.micro."):
+            continue
+        # Instances (e.g. Typer apps) carry their type's __module__;
+        # they are served from a submodule when identical to its attribute.
+        if not any(getattr(sub, name, None) is obj for sub in submodules):
             unresolved.append(f"{name}: resolves from {module!r}, not a submodule")
     assert not unresolved, f"names not served from submodules: {unresolved}"
 

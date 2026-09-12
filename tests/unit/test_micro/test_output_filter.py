@@ -145,9 +145,9 @@ class TestStatusTokenRegression:
     def test_token_literals_stable_in_source(self) -> None:
         import inspect
 
-        import deviate.cli.micro as micro
+        import deviate.cli.micro.surface as _surface_mod
 
-        src = inspect.getsource(micro)
+        src = inspect.getsource(_surface_mod)
         for token in self.TOKENS:
             assert f'"{token}"' in src, f"status token drifted out of source: {token}"
 

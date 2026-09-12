@@ -30,7 +30,7 @@ from deviate.cli.meso import (
     specify,
     tasks,
 )
-from deviate.cli.micro import (
+from deviate.cli.micro.surface import (
     _run_all as _run_all,  # noqa: F401  (referenced by tests/test_cli/test_top_level_run.py)
     e2e_app,
     execute_app,

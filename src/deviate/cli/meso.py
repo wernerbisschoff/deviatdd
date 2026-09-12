@@ -1291,7 +1291,7 @@ def _tasks_pre(force: bool = False, dry_run: bool = False) -> None:
     if dry_run:
         console.print("[yellow]DRY_RUN[/] skipping side effects")
 
-    from deviate.cli.micro import existing_verification_suites
+    from deviate.cli.micro.suites import existing_verification_suites
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     contract = {
