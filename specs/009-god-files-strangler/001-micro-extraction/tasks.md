@@ -40,6 +40,12 @@
     - **Acceptance**: `wc -l src/deviate/cli/micro.py` reports under 100 lines; grep finds zero `from deviate.cli.micro import` inside `src/deviate/cli/micro/`; no behavior edit shares the move commit.
   - **Dependency**: `TSK-001-01`
 
+  - **Judge Feedback**: The next GREEN attempt must:
+    - Requirement: TSK-001-02 requires a verbatim move into src/deviate/cli/micro/__init__.py plus a re-export-only shim at src/deviate/cli/micro.py under 100 lines, with no other files changed.
+    - Evidence: The rejected GREEN edited cli/__init__.py, meso.py, converge.py and added pending.py, suites.py, surface.py with package-relative imports.
+    - Correction: Reset to the TSK-001-01 head, copy micro.py verbatim to micro/__init__.py, replace micro.py with re-exports only of names consumed by cli/__init__.py, core/converge.py, and cli/meso.py.
+    - Verification: Run uv run pytest tests/unit/test_micro -q, wc -l src/deviate/cli/micro.py, and grep for bare shim imports inside src/deviate/cli/micro/.
+    - Boundary: Change only src/deviate/cli/micro/__init__.py and src/deviate/cli/micro.py. Do not edit tests, callers, or add submodules.
 - TSK-001-03: Re-point direct callers to micro submodules
   - **Type**: Feature_Batch
   - **Mode**: TDD
