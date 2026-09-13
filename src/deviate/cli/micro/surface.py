@@ -2174,6 +2174,7 @@ def _adjudicate_red_no_failing_test(
         session.save(session_path)
         if not _phase_already_done(ledger_path, tid, "COMPLETED"):
             _append_status_transition(task, "COMPLETED", ledger_path)
+        _commit_completed_ledger(root, task, ledger_path)
         c.print(
             f"  [green]COMPLETED (adjudicated)[/] {tid} \u2014 "
             "behavior already exists, no implementation needed"
@@ -5072,6 +5073,7 @@ def _apply_judge_verdict(
             raise
         except Exception as e:  # pragma: no cover - ledger robustness
             c.print(f"  [yellow]LEDGER_UPDATE_FAILED[/] {e}")
+        _commit_completed_ledger(root, task, ledger_path)
         return session
 
     # Legacy pass path: no action declared, hand to _finish_tdd_cycle.
@@ -5280,6 +5282,7 @@ def _finish_tdd_cycle(
             phase="CYCLE",
             decision="skip_refactor",
         )
+        _commit_completed_ledger(Path.cwd(), task, ledger_path)
         return _idle_after_tdd(session, session_path)
 
     if (
@@ -5318,6 +5321,7 @@ def _finish_tdd_cycle(
     except Exception as e:
         c.print(f"  [yellow]LEDGER_UPDATE_FAILED[/] {e}")
     c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
+    _commit_completed_ledger(Path.cwd(), task, ledger_path)
     return _idle_after_tdd(session, session_path)
 
 
@@ -6354,6 +6358,10 @@ def _run_execute_phase(
         append_task_transition(record, ledger_path)
     except Exception as e:
         c.print(f"  [yellow]LEDGER_UPDATE_FAILED[/] {e}")
+    # EXECUTE already committed the implementation (or no-op'd). The
+    # COMPLETED row is written after JUDGE pass / JUDGE_SKIP, so it
+    # needs its own ledger-only commit (GH-231).
+    _commit_completed_ledger(root, task, ledger_path)
 
 
 class PhaseFailedError(Exception):
@@ -6660,10 +6668,11 @@ def _run_checkpoint_phase(
     agent: str | None = None,
     monitor: OrchestrationMonitor | None = None,
 ) -> None:
+    root = Path.cwd()
     _append_checkpoint_row(task, "CHECKPOINT_STARTED", ledger_path)
     prompt = _render_checkpoint_prompt(task)
     backend = AgentBackend()
-    _cfg = _load_deviate_config_toml(Path.cwd())
+    _cfg = _load_deviate_config_toml(root)
     _models = _cfg.get("models", {}) if isinstance(_cfg, dict) else {}
     model = resolve_phase_model(
         "checkpoint", _models if isinstance(_models, dict) else {}
@@ -6683,6 +6692,18 @@ def _run_checkpoint_phase(
         kind = type(exc).__name__ or "AGENT_ERROR"
         _append_checkpoint_row(task, "CHECKPOINT_FAILED", ledger_path, reason=kind)
         return
+    finally:
+        # VERIFY / checkpoint often has no implementation diff to piggyback
+        # a commit on. Persist CHECKPOINT_STARTED + the terminal row (GH-231).
+        _commit_completed_ledger(
+            root,
+            task,
+            ledger_path,
+            message=(
+                f"chore({_build_scope(str(task.get('issue_id') or ''), task.get('id', '?'))}): "
+                "persist checkpoint ledger"
+            ),
+        )
 
 
 def _dispatch_task(
@@ -7262,6 +7283,90 @@ def _wait_for_review_confirmation() -> None:
             _fail_review_requires_tty()
         if answer.strip().lower() in _REVIEW_CONFIRM_YES:
             return
+
+
+def _commit_ledger_if_dirty(
+    root: Path,
+    ledger_path: Path,
+    message: str,
+    *,
+    task_id: str | None = None,
+) -> bool:
+    """Commit uncommitted ``tasks.jsonl`` rows after COMPLETE / checkpoint.
+
+    Stages only *ledger_path* so an earlier EXECUTE/GREEN implementation
+    commit stays file-only and leftover dirty files are not swept in
+    (checkpoint commits are runtime-owned ledger/evidence only). No-ops
+    when the ledger is clean or *root* is not a git worktree (GH-231).
+    """
+    if not ledger_path.is_file():
+        return False
+    probe = subprocess.run(
+        ["git", "rev-parse", "--git-dir"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    )
+    if probe.returncode != 0:
+        return False
+    rel = _repo_relpath(root, ledger_path)
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--", rel],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    )
+    if not status.stdout.strip():
+        return False
+    subprocess.run(
+        ["git", "add", "--", rel],
+        cwd=root,
+        capture_output=True,
+        env=_git_env(),
+    )
+    formatted = format_commit_message(message, root)
+    result = subprocess.run(
+        ["git", "commit", "-m", formatted],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    )
+    combined = ((result.stdout or "") + (result.stderr or "")).strip()
+    if result.returncode == 0:
+        console.print(f"  [green]Committed[/] [dim]{formatted}[/]")
+        _log_run(
+            "LEDGER_COMMITTED",
+            task_id=task_id or "?",
+            path=rel,
+            message=formatted,
+        )
+        return True
+    if result.returncode == 1 and "nothing to commit" in combined:
+        return False
+    raise PhaseFailedError(
+        f"COMMIT_FAILED: ledger commit failed for {task_id or '?'}: {combined}"
+    )
+
+
+def _commit_completed_ledger(
+    root: Path,
+    task: dict,
+    ledger_path: Path,
+    *,
+    message: str | None = None,
+) -> bool:
+    """Commit a just-written COMPLETED (or checkpoint) ledger row (GH-231)."""
+    tid = str(task.get("id") or "?")
+    scope = _build_scope(str(task.get("issue_id") or ""), tid)
+    return _commit_ledger_if_dirty(
+        root,
+        ledger_path,
+        message or f"chore({scope}): mark COMPLETED in ledger",
+        task_id=tid,
+    )
 
 
 def _maybe_review_pause(phase: str | None, task_id: str | None = None) -> None:
