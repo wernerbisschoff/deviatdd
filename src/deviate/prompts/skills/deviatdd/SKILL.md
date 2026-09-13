@@ -120,6 +120,7 @@ Key signals:
 | `POST_CMD_FAILURE` | Post-phase commit/lint hook failed. |
 | `JUDGE_REJECTED` with `head_sha`/`reset_to`/`recovery_ref` | Rolled-back tree — `git show <head_sha>` or `git switch <recovery_ref>` inspects it (never `git stash`). |
 | `LOOP_DETECTED` / `CYCLE_END` | Repeated JUDGE rejects (`blast=`, `streak=`) / task left the cycle — read `.verdicts.jsonl`. |
+| `JUDGE_REQUIREMENT_CONTRADICTION` / `HITL_REQUIRED` | Successive JUDGE requirements conflict (strict identity matching vs preserve a conflicting fixture). Do not keep training. Choose one spec interpretation, correct the fixture or requirement, then retry. |
 | `FEEDBACK_COMMIT_FAILED` | Auto-GREEN feedback-marker commit failed; train boundary degraded. |
 
 ### Step 3: Unblock or escalate
@@ -133,6 +134,7 @@ Use this bounded ladder. Do not use repeated retries as diagnosis.
 | Deterministic RED, GREEN, or JUDGE task failure | Re-run `deviate micro run <TASK_ID>` once — the runner resumes at the failed phase. If the same phase fails again, drive it inline yourself by following `src/deviate/prompts/commands/deviate-<phase>.md` (run `deviate <phase> pre`, do the phase work, run `deviate <phase> post`). Never output `/deviate-green` as an instruction for the operator. | One retry, then one inline drive. |
 | Worktree or session corruption | Use the **Clean-slate retry** gate. It requires explicit approval before destructive commands. | One approved recovery. |
 | Git, ledger, rollback, or internal `src/deviate/...` failure | Treat it as a harness bug. Preserve logs, check for an open issue, then escalate. | No retry unless a documented workaround exists. |
+| `JUDGE_REQUIREMENT_CONTRADICTION` / `HITL_PENDING` after oscillating JUDGE feedback | Stop. This is a specification decision, not more GREEN/RED training. Choose strict matching or preserve the existing fixture, correct the conflicting spec/test, commit that correction, then retry the task. | No training retry until the operator chooses. |
 | Failure ownership is unclear, evidence conflicts, or recovery can lose data | Stop and ask the operator. Include the task ID, command, last error, dirty-file list, and recommended slash command. | No retry. |
 
 Escalation triggers are the approval, dirty-ledger, and repeat-failure rows above. Escalate when the same harness signature affects two tasks instead of retrying each one. Do not skip a task by editing `tasks.jsonl`; it is append-only.

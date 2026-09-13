@@ -1090,8 +1090,16 @@ uses the same `_resolve_task_context` selector as the other micro pres.
     TRAIN 3/3 is a real GREEN. After three GREEN runs, the next train
     escalates (`green_budget_exhausted`) instead of burning the last
     slot on escalate. `revert_green` keeps the standing RED contract;
-    `revert_red` / `test_defect` escalate immediately. `TRAIN_EXHAUSTED`
-    prints only after three RED escalates. On test failure or `COMPLIANCE_VIOLATION`,
+    `revert_red` / `test_defect` escalate immediately.     `TRAIN_EXHAUSTED`
+    prints only after three RED escalates. Successive JUDGE rejections are
+    compared before the next train: `_apply_judge_verdict` reads prior reject
+    feedback from `.verdicts.jsonl`, `tasks.md` Judge Feedback, and
+    `session.train_feedback`. When Requirement/Correction text polar-flips
+    (strict identity matching vs preserve conflicting fixtures/tests) or
+    oscillates A-B-A, the runner logs `JUDGE_REQUIREMENT_CONTRADICTION`,
+    marks `HITL_PENDING`, raises `HitlEscalationError`, and does not consume
+    further GREEN/RED train budget (GH-230). Identical restated requirements
+    still train. `LOOP_DETECTED` remains telemetry only. On test failure or `COMPLIANCE_VIOLATION`,
     `_execute_rollback()` runs `git reset --hard <boundary_sha>` against
     the boundary the caller threads in, then `git clean -fd`, then
     restores every `tasks.md` that existed at the pre-reset HEAD and is
@@ -1856,7 +1864,7 @@ src/deviate/
   requirements, DAG dependencies. Written by the agent during the `/deviate-tasks` skill
   invocation. Lives at `specs/{FEATURE_SLUG}/issues/{ISSUE_ID}/tasks.md`.
 - **`tasks.jsonl`** — Machine-managed append-only event ledger. Contains only status
-  transitions (`PENDING`, `RED`, `GREEN`, `REFACTOR`, `COMPLETED`, `FAILED`) and
+  transitions (`PENDING`, `RED`, `GREEN`, `REFACTOR`, `COMPLETED`, `FAILED`, `HITL_PENDING`) and
   execution metadata. Written exclusively by the `deviate` CLI. Lives at
   `specs/{FEATURE_SLUG}/issues/{ISSUE_ID}/tasks.jsonl`. Agents **cannot** write to
   this file directly — only the CLI may append events via `append_task_transition()`.
@@ -1936,7 +1944,7 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 | `id` | `str` | Unique ID (`TSK-NNN-NN` format, validated via regex) |
 | `issue_id` | `str` | Parent issue ID |
 | `description` | `str` | Task description |
-| `status` | Literal | `PENDING`, `RED`, `GREEN`, `JUDGE`, `REFACTOR`, `COMPLETED`, `FAILED` |
+| `status` | Literal | `PENDING`, `RED`, `GREEN`, `JUDGE`, `REFACTOR`, `COMPLETED`, `FAILED`, `HITL_PENDING` |
 | `execution_mode` | Literal | `TDD`, `DIRECT`, `E2E` |
 | `acceptance_criteria` | `list[AcceptanceCriterion]` | `AC-PLAN-NNN` traceability for this task (`criterion_id` per scenario); JUDGE resolves required tokens from this field first (`resolve_task_ac_tokens`) |
 | `created_at` | `datetime` | When the task was created |

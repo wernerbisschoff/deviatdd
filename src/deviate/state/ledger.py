@@ -156,6 +156,7 @@ class TaskRecord(BaseModel):
         "REFACTOR",
         "COMPLETED",
         "FAILED",
+        "HITL_PENDING",
         "CHECKPOINT_STARTED",
         "CHECKPOINT_FAILED",
     ] = "PENDING"

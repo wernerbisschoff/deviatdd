@@ -42,6 +42,7 @@ Select `revert_green` (discard GREEN only, keep RED) and address the next GREEN.
 Defective original RED tests require `red_baseline_integrity: FAIL`, `revert_red` (discard RED+GREEN), and feedback for the next RED.
 If both phases are defective, select `FAIL`. Use null for an unavailable or unverified RED baseline.
 Omitted or null classification preserves legacy routing. Mechanical and test-defect overrides remain unchanged.
+The runner compares successive rejection Requirement/Correction texts. Mutually incompatible fixture or identity outcomes escalate to HITL instead of more GREEN/RED training.
 
 ```yaml
 phase: "JUDGE"
