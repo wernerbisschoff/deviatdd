@@ -1312,8 +1312,10 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   SIGKILL on the **process group** (`start_new_session=True` →
   `os.killpg`) so every descendant of the test command — e.g.
   `cargo test` spawning `gloss serve` parked on stdin EOF — is
-  reaped alongside the immediate child. The wrapper returns a
-  deterministic `subprocess.CompletedProcess` with
+  reaped alongside the immediate child. `_kill_process_group`
+  swallows `ProcessLookupError` (ESRCH) and `PermissionError`
+  (EPERM) so cleanup cannot crash the runner (GH-216). The wrapper
+  returns a deterministic `subprocess.CompletedProcess` with
   `returncode == 124` (GNU `timeout(1)`-compatible) and preserves
   partial stdout/stderr captured before the deadline. Fixes the
   GREEN-phase hang observed when the inner child caught SIGTERM but

@@ -400,7 +400,7 @@ def parse_safe_command(command: str) -> SafeCommand:
 
 
 def _kill_process_group(pid: int, sig: int) -> None:
-    """Best-effort ``os.killpg`` wrapper that swallows ESRCH.
+    """Best-effort ``os.killpg`` wrapper that swallows ESRCH and EPERM.
 
     Skips invalid pids (``None``, ``0``, negative). ``pid == 0`` is
     special: ``os.killpg(0, sig)`` signals the **current** process
@@ -408,8 +408,12 @@ def _kill_process_group(pid: int, sig: int) -> None:
     ``subprocess.TimeoutExpired.pid`` is ``None`` (the child never
     spawned, or ``start_new_session=True`` left the field unset),
     there is no group to target — the ``subprocess.run`` timeout
-    machinery has already SIGKILL'd the immediate child. ESRCH means
-    the group already exited, also a fine end-state.
+    machinery has already SIGKILL'd the immediate child. ESRCH
+    (``ProcessLookupError``) means the group already exited.
+    EPERM (``PermissionError``) means the group is unsignalable
+    (already reaped, or the orchestrator is not allowed to signal
+    it). Both are terminal cleanup end-states — the timeout path
+    must still return ``returncode == 124`` instead of crashing.
     """
     if pid is None or pid <= 0:
         return
