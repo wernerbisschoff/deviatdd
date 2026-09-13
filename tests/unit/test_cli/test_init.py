@@ -1469,6 +1469,23 @@ class TestInstallDeviatddSkill:
         ):
             assert instruction in body
 
+    def test_deviatdd_skill_classifies_missing_red_boundary_as_harness_bug(
+        self,
+    ) -> None:
+        """GH-228: ROLLBACK_BOUNDARY_MISSING is DEVIATDD_BUG, not only BLOCKED."""
+        body = _resolve_skill_source()
+        assert body is not None, "deviatdd SKILL.md source not loadable"
+        assert "ROLLBACK_BOUNDARY_MISSING" in body
+        rollback_idx = body.index("ROLLBACK_BOUNDARY_MISSING")
+        snippet = body[max(0, rollback_idx - 80) : rollback_idx + 700]
+        assert "DEVIATDD_BUG" in snippet, (
+            "ROLLBACK_BOUNDARY_MISSING triage must classify as DEVIATDD_BUG"
+        )
+        assert "not only `BLOCKED`" in snippet or "not `BLOCKED`" in snippet
+        assert "/deviate-green" in snippet, (
+            "missing-boundary triage must recommend /deviate-green after evidence"
+        )
+
     def test_deviatdd_skill_troubleshooting_section_matches_logger(
         self,
     ) -> None:

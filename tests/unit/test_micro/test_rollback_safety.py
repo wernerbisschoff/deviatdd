@@ -875,7 +875,7 @@ def test_judge_missing_red_boundary_reports_bug_and_preserves_evidence(
     session_path.parent.mkdir()
     session = SessionState(current_phase="JUDGE", active_issue_id="ISS-ADH-059")
     session.save(session_path)
-    task = {"id": "TSK-059-01", "head_sha": head_sha, "recovery_ref": "recover/ref"}
+    task = {"id": "TSK-059-01"}
     manifest = HandoverManifest(
         phase="JUDGE",
         status="PASS",
@@ -904,7 +904,7 @@ def test_judge_missing_red_boundary_reports_bug_and_preserves_evidence(
     text = str(excinfo.value)
     assert "DEVIATDD_BUG" in text
     assert f'head_sha="{head_sha}"' in text
-    assert 'recovery_ref="recover/ref"' in text
+    assert 'recovery_ref="tmp/deviate-agent-work/TSK-059-01/attempt-1"' in text
     assert "/deviate-green" in text
     assert "HEAD~1" not in text
     assert _current_head(tmp_git_repo) == head_sha
@@ -923,7 +923,7 @@ def test_judge_empty_red_boundary_keeps_empty_evidence(
     session_path.parent.mkdir()
     session = SessionState(current_phase="JUDGE", active_issue_id="ISS-ADH-059")
     session.save(session_path)
-    task = {"id": "TSK-059-01", "head_sha": None, "recovery_ref": None}
+    task = {"id": "TSK-059-01"}
     manifest = HandoverManifest(
         phase="JUDGE",
         status="PASS",
@@ -932,9 +932,15 @@ def test_judge_empty_red_boundary_keeps_empty_evidence(
         next_action="revert_green",
         rationale="missing RED boundary",
     )
+    from deviate.cli.micro import _RollbackTrace
+
     monkeypatch.setattr(
         "deviate.cli.micro._commit_judge_feedback_and_advance",
         lambda *args, **kwargs: pytest.fail("feedback commit must be skipped"),
+    )
+    monkeypatch.setattr(
+        "deviate.cli.micro._planned_revert_anchor",
+        lambda *args, **kwargs: _RollbackTrace(),
     )
 
     with chdir(tmp_git_repo), pytest.raises(Exception) as excinfo:

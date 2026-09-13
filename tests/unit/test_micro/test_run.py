@@ -1418,25 +1418,23 @@ class TestStaleRejectionRecovery:
 
 @pytest.mark.behavioral
 @pytest.mark.parametrize(
-    ("head_sha", "recovery_ref"),
+    ("planned_head", "planned_ref"),
     [
-        ("green-head-sha", "recovery/ref"),
+        ("green-head-sha", "tmp/deviate-agent-work/TSK-059-02/attempt-1"),
         ("", ""),
     ],
 )
 def test_missing_red_boundary_reports_evidence_and_stops_advancement(
-    head_sha: str,
-    recovery_ref: str,
+    planned_head: str,
+    planned_ref: str,
     tmp_git_repo: Path,
 ) -> None:
     """A missing RED boundary keeps evidence and stops unsafe JUDGE progress."""
+    from deviate.cli.micro import _RollbackTrace
+
     ledger_path = tmp_git_repo / "tasks.jsonl"
     session_path = tmp_git_repo / "session.json"
-    task = {
-        "id": "TSK-059-02",
-        "head_sha": head_sha,
-        "recovery_ref": recovery_ref,
-    }
+    task = {"id": "TSK-059-02"}
     session = SessionState()
     manifest = HandoverManifest(
         phase="JUDGE",
@@ -1450,6 +1448,12 @@ def test_missing_red_boundary_reports_evidence_and_stops_advancement(
 
     with (
         patch("deviate.cli.micro._commit_judge_feedback_and_advance") as advance,
+        patch(
+            "deviate.cli.micro._planned_revert_anchor",
+            return_value=_RollbackTrace(
+                head_sha=planned_head, recovery_ref=planned_ref
+            ),
+        ),
         chdir(tmp_git_repo),
         pytest.raises(PhaseFailedError) as raised,
     ):
@@ -1465,8 +1469,8 @@ def test_missing_red_boundary_reports_evidence_and_stops_advancement(
 
     message = str(raised.value)
     assert "DEVIATDD_BUG" in message
-    assert f'head_sha="{head_sha}"' in message
-    assert f'recovery_ref="{recovery_ref}"' in message
+    assert f'head_sha="{planned_head}"' in message
+    assert f'recovery_ref="{planned_ref}"' in message
     assert "/deviate-green" in message
     assert "HEAD~1" not in message
     advance.assert_not_called()
