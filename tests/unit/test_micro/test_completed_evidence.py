@@ -80,6 +80,7 @@ class TestCompletedEvidenceDurability:
         self, tmp_git_repo: Path
     ) -> None:
         red_sha = _seed_red_green(tmp_git_repo)
+        proof_head = _head_sha(tmp_git_repo)
         session, _, ledger = _run_tdd_judge(
             tmp_git_repo,
             _gate_manifest(
@@ -101,9 +102,10 @@ class TestCompletedEvidenceDurability:
         assert items[0]["impl_quote"] == _GATE_IMPL_QUOTE
         if isinstance(evidence, dict):
             assert evidence.get("red") == red_sha
-            head = _head_sha(tmp_git_repo)
-            assert evidence.get("head") == head
-            assert evidence.get("green") == head
+            # GH-84 stamps HEAD at the COMPLETED write (GREEN). GH-231 then
+            # commits the ledger, so current HEAD is the follow-up commit.
+            assert evidence.get("head") == proof_head
+            assert evidence.get("green") == proof_head
 
     def test_earlier_rows_stay_lean(self, tmp_git_repo: Path) -> None:
         red_sha = _seed_red_green(tmp_git_repo)
@@ -277,6 +279,7 @@ class TestCompletedEvidenceDurability:
         self, tmp_git_repo: Path
     ) -> None:
         red_sha = _seed_already_exists(tmp_git_repo)
+        proof_head = _head_sha(tmp_git_repo)
         session, _, ledger = _run_tdd_judge(
             tmp_git_repo,
             _gate_manifest(
@@ -293,9 +296,10 @@ class TestCompletedEvidenceDurability:
         assert items[0]["ac"] == "AC-PLAN-001"
         assert items[0]["test_quote"] == _GATE_TEST_QUOTE
         if isinstance(evidence, dict):
-            head = _head_sha(tmp_git_repo)
-            assert evidence.get("head") == head
-            assert evidence.get("green") == head
+            # Proof SHAs are HEAD at the COMPLETED write, not the GH-231
+            # ledger-only follow-up commit.
+            assert evidence.get("head") == proof_head
+            assert evidence.get("green") == proof_head
             assert evidence.get("red") == red_sha
 
 
