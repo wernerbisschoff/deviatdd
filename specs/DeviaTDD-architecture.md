@@ -732,7 +732,8 @@ the command's exit code plus `_is_no_tests_collected` (pytest exit 5) and `_is_n
 `_run_format_cmd()` is optional polish after RED/GREEN/REFACTOR (and `red post`):
 it runs `mise run format` only when `[tasks.format]` is defined. Missing mise
 returns exit 127 without raising; a missing format task is a no-op. Format never
-gates the phase.
+gates the phase. `_resolve_lint_command()` prefers constitution `lint_command`, then
+`mise run lint` only when `[tasks.lint]` is defined, else empty (never invented).
 
 | Testing Framework | CLI Invocation Strategy | Success Validation | Error Parse Pattern | Scope Protection |
 | :--- | :--- | :--- | :--- | :--- |

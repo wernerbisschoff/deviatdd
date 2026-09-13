@@ -17,6 +17,7 @@ Use `mise run <task>`. All task definitions live in `.mise.toml`; git hooks in `
 | `mise run lint` / `lint-fix` / `format` / `format-check` | Style |
 | `mise run check-types` / `check` / `fix` | Validation bundles |
 | `mise run setup` / `clean` / `help` | Lifecycle |
+| `mise run verify` / `test:one` / `doctor` | App checks / focused test / toolchain (see `docs/verification.md`) |
 
 ## 🔐 Commit Authority
 

@@ -1064,3 +1064,23 @@ class TestMiseCommandsAreAllowlisted:
         parsed = parse_safe_command(command)
         assert not parsed.accepted, command
         assert not is_safe_test_command(command)
+
+
+class TestResolveLintCommandMiseFallback:
+    def test_mise_lint_task_used_without_constitution(self, tmp_path: Path) -> None:
+        _write_mise(tmp_path, '[tasks.lint]\nrun = "ruff check"\n')
+        assert micro._resolve_lint_command(tmp_path) == "mise run lint"
+
+    def test_empty_without_constitution_or_lint_task(self, tmp_path: Path) -> None:
+        _write_mise(tmp_path, '[tasks.test]\nrun = "pytest"\n')
+        assert micro._resolve_lint_command(tmp_path) == ""
+
+    def test_empty_without_mise_at_all(self, tmp_path: Path) -> None:
+        assert micro._resolve_lint_command(tmp_path) == ""
+
+    def test_constitution_wins_over_mise_lint(self, tmp_path: Path) -> None:
+        _write_mise(tmp_path, '[tasks.lint]\nrun = "ruff check"\n')
+        const = tmp_path / "specs" / "constitution.md"
+        const.parent.mkdir(parents=True)
+        const.write_text("LINT_COMMAND: `custom-lint --strict`\n", encoding="utf-8")
+        assert micro._resolve_lint_command(tmp_path) == "custom-lint --strict"

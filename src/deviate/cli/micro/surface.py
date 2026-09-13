@@ -1606,7 +1606,11 @@ def _resolve_lint_command(root: Path) -> str:
         from deviate.core.constitution import extract_commands
 
         cmds = extract_commands(const_path)
-        return cmds.get("lint_command", "")
+        declared = cmds.get("lint_command", "")
+        if declared:
+            return declared
+    if "lint" in _mise_defined_tasks(root):
+        return "mise run lint"
     return ""
 
 
@@ -7804,7 +7808,7 @@ def _refactor_pre_kernel(
             "task_title": task_data.get("description", ""),
             "task_type": _task_type_from_card(card),
             **_pre_layer_contract(root, task_data),
-            "lint_command": _resolve_lint_command(root) or "mise run lint",
+            "lint_command": _resolve_lint_command(root),
             "spec_dir": str(ledger_path.parent),
             "verification": _task_verification_command(root, task_data),
             "repo_root": str(root.resolve()),
