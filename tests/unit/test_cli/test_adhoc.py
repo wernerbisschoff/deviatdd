@@ -160,6 +160,48 @@ class TestAdhocPreAttachRouting:
 
 
 class TestAdhocPost:
+    def test_post_commit_runs_hooks_without_no_verify(self, tmp_path: Path) -> None:
+        """`adhoc post` commits with hooks enabled per CONTRIBUTING.md."""
+        import subprocess
+
+        manifest_id = "adhoc-test-001"
+        (tmp_path / ".git").mkdir()
+        (tmp_path / "specs").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "specs" / "adhoc.jsonl").write_text(
+            json.dumps(
+                {
+                    "issue_id": manifest_id,
+                    "description": "Fix typo",
+                    "execution_mode": "DIRECT",
+                    "status": "PENDING",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        seen: list[list[str]] = []
+
+        def fake_run(cmd: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+            argv = list(cmd)  # type: ignore[arg-type]
+            seen.append(argv)
+            if argv[:2] == ["git", "status"]:
+                return subprocess.CompletedProcess(
+                    argv, 0, stdout=" M file\n", stderr=""
+                )
+            if argv[:2] == ["git", "diff"]:
+                return subprocess.CompletedProcess(argv, 1, stdout="", stderr="")
+            if argv[:2] == ["git", "commit"]:
+                return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+        with chdir(tmp_path), patch("deviate.cli.adhoc.subprocess.run", fake_run):
+            result = runner.invoke(cli, ["adhoc", "post", manifest_id])
+
+        assert result.exit_code == 0, result.output
+        commits = [a for a in seen if a[:2] == ["git", "commit"]]
+        assert len(commits) == 1
+        assert "--no-verify" not in commits[0]
+
     def test_post_completes_record(self, tmp_path: Path) -> None:
         manifest_id = "adhoc-test-001"
         record = {

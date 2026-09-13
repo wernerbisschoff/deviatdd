@@ -179,7 +179,7 @@ def post(
         if staged.returncode != 0 or unstaged.returncode != 0 or has_untracked:
             subprocess.run(["git", "add", "-A"], cwd=root, env=_git_env(), check=False)
             result = subprocess.run(
-                ["git", "commit", "-m", message, "--no-verify"],
+                ["git", "commit", "-m", message],
                 cwd=root,
                 env=_git_env(),
                 capture_output=True,

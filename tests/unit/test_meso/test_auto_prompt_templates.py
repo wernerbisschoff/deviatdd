@@ -365,6 +365,12 @@ class TestCommitScopeConvention:
         assert '"docs({COMMIT_SCOPE}): add issue {ISSUE_ID}"' in prompt
         assert "docs(adhoc): add issue" not in prompt
 
+    def test_adhoc_commit_adheres_to_contributing(self):
+        prompt = self._read_prompt("deviate-adhoc.md")
+        assert "CONTRIBUTING.md" in prompt
+        assert "--no-verify" in prompt  # forbidden, hooks stay enabled
+        assert "emoji" in prompt.lower()
+
 
 class TestReviewPromptSecurityTaxonomy:
     """The review prompt's cross-task Security section must align with the

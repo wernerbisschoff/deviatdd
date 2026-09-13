@@ -87,7 +87,7 @@ The ad-hoc issue describes implementation of requested application behavior in a
 ```
 Substitute `ISS-NNN`, `NNN-slug.md`, title, and timestamps with real values. Reuse the same `NNN` allocated in step 5. `ISS-ADH-NNN` and `ISS-NNN` share that ordinal. Use `datetime.now(timezone.utc).isoformat()` for timestamps.
 
-7. **Commit**: Commit all changes with a plain `git commit`. Do NOT run `deviate adhoc post` and do NOT append a `COMPLETED` transition to `specs/issues.jsonl`: the record stays `BACKLOG` until the meso/micro pipeline actually ships the work. The ledger may only record `BACKLOG` (step 6); `SPECIFIED` / `SHARDED` / `COMPLETED` are written by later phase post-scripts, not here. For `COMMIT_SCOPE`, strip the legacy `ISS-` prefix per `deviate-merge` (e.g. `ISS-ADH-044` becomes `ADH-044`).
+7. **Commit**: Commit all changes with a plain `git commit` (hooks enabled — never `--no-verify`, per `CONTRIBUTING.md`). Do NOT run `deviate adhoc post` and do NOT append a `COMPLETED` transition to `specs/issues.jsonl`: the record stays `BACKLOG` until the meso/micro pipeline actually ships the work. The ledger may only record `BACKLOG` (step 6); `SPECIFIED` / `SHARDED` / `COMPLETED` are written by later phase post-scripts, not here. For `COMMIT_SCOPE`, strip the legacy `ISS-` prefix per `deviate-merge` (e.g. `ISS-ADH-044` becomes `ADH-044`). Check `CONTRIBUTING.md` for an emoji convention first: if it shows emoji-prefixed subjects (e.g. `📚 docs(scope): ...`), prepend the matching emoji (`📚` for `docs`); if it shows plain `<type>(<scope>): <description>` with no emoji, commit with no emoji prefix.
 
    ```
    git add -A && git commit -m "docs({COMMIT_SCOPE}): add issue {ISSUE_ID}"
