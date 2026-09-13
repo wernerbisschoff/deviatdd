@@ -613,6 +613,56 @@ class TestGreenRedCommitShaGate:
             "AC-PLAN-002: `_run_green_phase` must not invoke the GREEN agent "
             f"when session.red_commit_sha is empty; error={error!r}"
         )
+        assert error is not None
+        assert "GREEN_ENTRY_REFUSED" in str(error)
+
+    def test_green_refuses_empty_red_commit_sha_when_phase_is_green(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """GH-228: empty SHA still refuses GREEN after the session left RED."""
+        root = tmp_git_repo
+        session, session_path, ledger_path, task = _seed_green_workspace(
+            root, red_commit_sha=""
+        )
+        session.current_phase = "GREEN"
+        session.save(session_path)
+        invoke_count, error = _drive_green_phase(
+            root, session, session_path, ledger_path, task
+        )
+        assert invoke_count == 0, (
+            "GH-228: `_run_green_phase` must not skip the RED-boundary gate "
+            f"when current_phase is GREEN and red_commit_sha is empty; "
+            f"error={error!r}"
+        )
+        assert error is not None
+        assert "GREEN_ENTRY_REFUSED" in str(error)
+
+    def test_green_persists_recovered_red_commit_sha_before_invoke(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """GH-228: recover and persist red_commit_sha before GREEN starts."""
+        root = tmp_git_repo
+        session, session_path, ledger_path, task = _seed_green_workspace(
+            root, red_commit_sha=""
+        )
+        red_sha = _empty_commit(root, "test(TSK-021-02): RED phase - failing test")
+        session.red_commit_sha = ""
+        session.save(session_path)
+        invoke_count, error = _drive_green_phase(
+            root, session, session_path, ledger_path, task
+        )
+        persisted = SessionState.load(session_path)
+        assert error is None, (
+            f"GH-228: recoverable RED SHA must persist and enter GREEN; error={error!r}"
+        )
+        assert invoke_count == 1, (
+            "GH-228: GREEN must invoke after persisting the recovered RED SHA; "
+            f"invoke_count={invoke_count}"
+        )
+        assert persisted.red_commit_sha.strip() == red_sha, (
+            "GH-228: session.red_commit_sha must be set before GREEN; "
+            f"got {persisted.red_commit_sha!r} expected {red_sha!r}"
+        )
 
     def test_green_refuses_docs_judge_feedback_red_commit_sha_without_invoke(
         self, tmp_git_repo: Path

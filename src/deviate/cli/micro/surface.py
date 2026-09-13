@@ -1866,6 +1866,9 @@ def _run_red_phase(
         ledger_path, task.get("id", ""), "RED"
     ):
         c.print(f"  [dim]RED already done for {_task_label(task)}, skipping[/]")
+        if not _has_red_commit_boundary(session):
+            if not _recover_red_commit_boundary(Path.cwd(), session, tid):
+                session.save(session_path)
         return _RedPhaseOutcome(session, None)
     # A rollback boundary belongs to the active task.  Clear any boundary
     # retained by a completed prior task before the RED agent can fail; this
@@ -2243,8 +2246,7 @@ def _run_green_phase(
         )
     agent_output_callback = _make_agent_output_callback(monitor, tid, "GREEN")
     green_model = resolve_model_for_phase("GREEN", root, backend=backend)
-    if session.current_phase == "RED" or session.red_commit_sha.strip():
-        _require_green_entry_red_sha(root, session, tid)
+    _ensure_green_entry_red_sha(root, session, session_path, tid)
     session.green_attempts += 1
     session.save(session_path)
     _emit_green_train(
@@ -3410,6 +3412,50 @@ def _require_green_entry_red_sha(root: Path, session: SessionState, tid: str) ->
     raise PhaseFailedError(
         f"GREEN_ENTRY_REFUSED: {tid} has no RED-phase failing-test "
         f"commit (red_commit_sha={session.red_commit_sha!r})"
+    )
+
+
+def _ensure_green_entry_red_sha(
+    root: Path,
+    session: SessionState,
+    session_path: Path,
+    tid: str,
+) -> None:
+    """Persist a recoverable RED SHA, then refuse GREEN without one.
+
+    GH-228: the RED boundary must be on the session before the GREEN
+    agent runs. Recover from ledger + git when the field is empty, save
+    it, then apply ``_require_green_entry_red_sha`` unconditionally —
+    including when ``current_phase`` is already GREEN.
+    """
+    if not _has_red_commit_boundary(session):
+        if not _recover_red_commit_boundary(root, session, tid):
+            session.save(session_path)
+    _require_green_entry_red_sha(root, session, tid)
+
+
+def _rollback_evidence_fields(planned: _RollbackTrace, task: dict) -> tuple[str, str]:
+    """Return ``(head_sha, recovery_ref)`` for a missing-boundary report.
+
+    Prefer the planned revert index (git HEAD + recovery-ref formula).
+    Task-card fields are a last resort when the planner is empty.
+    """
+    head_sha = planned.head_sha or str(task.get("head_sha") or "")
+    recovery_ref = planned.recovery_ref or str(task.get("recovery_ref") or "")
+    return head_sha, recovery_ref
+
+
+def _missing_revert_green_harness_error(
+    planned: _RollbackTrace,
+    task: dict,
+) -> PhaseFailedError:
+    """Distinct harness failure for ``revert_green`` without a RED SHA."""
+    head_sha, recovery_ref = _rollback_evidence_fields(planned, task)
+    return PhaseFailedError(
+        f"DEVIATDD_BUG: ROLLBACK_BOUNDARY_MISSING; "
+        f'head_sha="{head_sha}" '
+        f'recovery_ref="{recovery_ref}" '
+        "Recommend /deviate-green."
     )
 
 
@@ -4840,7 +4886,12 @@ def _apply_judge_verdict(
             # revert_green: rollback to RED then advance the boundary.
             # ``boundary_sha`` is the active RED commit, remapped through
             # ``_require_revert_green_boundary`` so a rebase-rewritten
-            # SHA is used — never the stale pre-rebase object.
+            # SHA is used — never the stale pre-rebase object. Recover a
+            # lost session SHA from ledger + git first (GH-228); still
+            # refuse HEAD~1 when no unique RED commit exists.
+            if not _has_red_commit_boundary(session):
+                if not _recover_red_commit_boundary(root, session, tid):
+                    session.save(session_path)
             boundary_sha = _require_revert_green_boundary(root, session, tid)
             rollback_attempts += 1
             rollback = _execute_rollback(
@@ -4883,15 +4934,8 @@ def _apply_judge_verdict(
         except Exception as e:
             if _is_fatal_missing_revert_green_boundary(action, e):
                 if action == "revert_green" and "ROLLBACK_BOUNDARY_MISSING" in str(e):
-                    head_sha = str(task.get("head_sha") or "")
-                    recovery_ref = str(task.get("recovery_ref") or "")
                     _record_reject_verdict()
-                    raise PhaseFailedError(
-                        f"DEVIATDD_BUG: ROLLBACK_BOUNDARY_MISSING; "
-                        f'head_sha="{head_sha}" '
-                        f'recovery_ref="{recovery_ref}" '
-                        "Recommend /deviate-green."
-                    ) from e
+                    raise _missing_revert_green_harness_error(planned, task) from e
                 _record_reject_verdict()
                 raise
             c.print(
@@ -5413,7 +5457,7 @@ def _recover_red_commit_boundary(
         ),
         "",
     )
-    if latest_status != "RED":
+    if latest_status not in {"RED", "GREEN", "JUDGE"}:
         return f"RED_BOUNDARY_NOT_RECOVERABLE: {task_id} missing RED ledger state"
     subjects = dict(_head_commit_subjects(root))
     candidates = [sha for sha, subject in subjects.items() if task_id in subject]

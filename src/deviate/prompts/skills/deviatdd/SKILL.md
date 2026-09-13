@@ -255,6 +255,7 @@ diagnostic, and the next action.
 | Branch drift | the worktree branch has diverged from `origin/<base>` | Run `/deviate-merge` to land the diverged work, or rebase manually only if you have operator sign-off. |
 | Judge emits `COMPLIANCE_PASS` on an intrinsically empty diff (RED-only deliverable, fixture, generated types, doc-only slice) | micro routes the verdict to `next_action: proceed_to_refactor_no_diff` and enters REFACTOR regardless of `--no-refactor` | No action — REFACTOR commits the empty-diff sign-off and marks COMPLETED. |
 | Agent subprocess timeout | micro prints `AGENT_TIMEOUT` after N seconds | Inspect the task log; if the model was rate-limited, retry once. If it persists, dispatch `/deviate-meso` to claim a fresh session. |
+| `ROLLBACK_BOUNDARY_MISSING` / `DEVIATDD_BUG: ROLLBACK_BOUNDARY_MISSING` | JUDGE `revert_green` has no `session.red_commit_sha`; runner printed `head_sha` / `recovery_ref` | Harness bug, not only `BLOCKED`. Preserve the log and recovery details (`git show <head_sha>` / `git switch <recovery_ref>`). Classify the skill output as `DEVIATDD_BUG`. After preserving evidence, recommend `/deviate-green`. Do not retry with `HEAD~1`. |
 | Pattern: repeated harness failures across different tasks | Multiple tasks fail with similar git/ledger/agent errors | **Do not retry**. File a deviatdd issue (see below). The harness has a bug, not the task. |
 
 ## Filing deviatdd issues
@@ -435,4 +436,7 @@ The table below names inline procedures this agent executes itself. Prefer `devi
 - `BLOCKED` — failure mode escapes micro; dispatch to the slash command
   named in `next_action`.
 - `DEVIATDD_BUG` — harness failure identified; deviatdd issue filed at
-  `deviatdd_issue_filed`.
+  `deviatdd_issue_filed`. Use this (not only `BLOCKED`) for
+  `ROLLBACK_BOUNDARY_MISSING` / missing `red_commit_sha` on
+  `revert_green`. Preserve `head_sha` and `recovery_ref`, then set
+  `next_action` to `/deviate-green`.
