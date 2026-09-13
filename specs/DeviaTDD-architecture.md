@@ -306,9 +306,12 @@ to invoke, but model selection is delegated to the calling environment.
       SIGTERM, waits a 5s grace, then SIGKILL on the **process
       group** (``start_new_session=True`` + ``os.killpg``) so every
       descendant of the test command is reaped alongside the
-      immediate child. Returned
+      immediate child. ``_kill_process_group`` swallows
+      ``ProcessLookupError`` (ESRCH) and ``PermissionError``
+      (EPERM) so an already-reaped or unsignalable group cannot
+      crash the runner (GH-216). Returned
       ``CompletedProcess.returncode == 124`` (GNU ``timeout(1)``
-      convention) — never an indefinite hang.
+      convention) — never an uncaught exception or indefinite hang.
     * **State Lock:** Upon a valid Green pass, `git add . && git commit -m "feat: [TASK-ID] Green phase complete"`.
     * **Layer discipline:** GREEN's only invariant is "make the RED test pass via the library/API surface declared in scope." It does NOT make scope, spec-drift, or HITL-routing judgments — those belong to JUDGE. When a RED test cannot be satisfied within GREEN's mechanical scope, GREEN emits `status: FAILURE` with a concrete `rationale:` naming the test path and why; `status: "ERROR"` is reserved strictly for tool/orchestration failure. The runner's `_is_hitl_escalation` is a narrow defensive fallback that ONLY promotes structured `contract_drift` / `escalates_to` / `hitl_options` dict keys to `HITL_PENDING` — loose-string `error_kind` discriminators and free-form scope-conflict text do NOT trigger HITL escalation.
     * **Mechanical Failure → JUDGE Routing:** When GREEN emits `status: FAILURE` with a concrete `rationale:` (the mechanical scope-boundary case above), the runner routes control to JUDGE instead of raising `PhaseFailedError`. `_run_green_phase` sets `session.train_feedback = rationale` + `session.failure_kind = "mechanical"` and returns the session; `_run_judge_phase` injects a `<failure_kind>mechanical</failure_kind>` discriminator block into the JUDGE prompt that instructs the agent to emit `verdict: COMPLIANCE_PASS` + `next_action: proceed_to_refactor_no_diff` (when the slice is intrinsically RED-only and REFACTOR's no-op commit + COMPLETED transition is the right termination) OR `verdict: COMPLIANCE_VIOLATION` + one of three `next_action` values (`revert_red` / `revert_green` / `skip_refactor`) instead of attempting to satisfy the test itself. This closes the loop where mechanical FAILURE (e.g. slice-scope conflict, CLI-surface-out-of-sco…
