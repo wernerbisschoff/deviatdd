@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# verify:setup — prove `deviate setup` provisions a fresh project.
+# Proves: non-interactive setup creates .deviate/ + agent command dir.
+# Does not prove: TTY prompts, global export mode, claim-remote push.
+# Cleanup: temp dir removed on exit.
+set -euo pipefail
+
+REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+cd "$WORK"
+uv run --project "$REPO_DIR" deviate setup --agent claude --packs none --no-claim-remote >/dev/null
+
+test -d .deviate || { echo "FAIL: .deviate/ missing"; exit 1; }
+test -d .claude/commands || { echo "FAIL: .claude/commands missing"; exit 1; }
+test -f .deviate/config.toml || { echo "FAIL: .deviate/config.toml missing"; exit 1; }
+echo "setup: ok (.deviate/ + .claude/commands provisioned)"
