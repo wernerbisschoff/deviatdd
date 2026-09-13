@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.conftest import _git_env
+
 from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord
@@ -31,10 +33,23 @@ def _write_ledger(ledger_path: Path, *records: TaskRecord) -> None:
         ledger_path.open("a", encoding="utf-8").write(r.model_dump_json() + "\n")
 
 
-def _seed_repo(root: Path, status: str = "PENDING") -> tuple[Path, Path]:
+def _current_head(root: Path) -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        env=_git_env(),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+
+def _seed_repo(
+    root: Path, status: str = "PENDING", *, red_commit_sha: str = ""
+) -> tuple[Path, Path]:
     (root / ".deviate").mkdir(parents=True, exist_ok=True)
     session_path = root / ".deviate" / "session.json"
-    SessionState(current_phase="IDLE").save(session_path)
+    SessionState(current_phase="IDLE", red_commit_sha=red_commit_sha).save(session_path)
     task = TaskRecord(
         id="TSK-001-07",
         issue_id="ISS-007-001",
@@ -95,7 +110,9 @@ def test_red_auto_delegates_to_kernels_with_one_agent_call(tmp_git_repo: Path):
 def test_green_auto_delegates_to_kernel_with_one_agent_call(tmp_git_repo: Path):
     from deviate.cli import micro as micro
 
-    ledger_path, session_path = _seed_repo(tmp_git_repo, status="RED")
+    ledger_path, session_path = _seed_repo(
+        tmp_git_repo, status="RED", red_commit_sha=_current_head(tmp_git_repo)
+    )
     passing = subprocess.CompletedProcess(
         args=[], returncode=0, stdout="1 passed", stderr=""
     )
@@ -200,7 +217,10 @@ def test_kernel_error_caught_per_step_with_no_side_effect(
     else:
         phase = "red"
         seed_status = "PENDING"
-    ledger_path, session_path = _seed_repo(tmp_git_repo, status=seed_status)
+    red_sha = _current_head(tmp_git_repo) if phase == "green" else ""
+    ledger_path, session_path = _seed_repo(
+        tmp_git_repo, status=seed_status, red_commit_sha=red_sha
+    )
     ledger_before = ledger_path.read_text(encoding="utf-8")
     session_before = session_path.read_text(encoding="utf-8")
     commits_before = _head_count(tmp_git_repo)
