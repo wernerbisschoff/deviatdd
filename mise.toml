@@ -105,13 +105,53 @@ description = "List tasks"
 
 [tasks.unit]
 run = "uv run pytest tests --ignore=tests/test_integration --ignore=tests/integration --ignore=tests/e2e"
+description = "Run unit tests (excludes integration + e2e)"
 
 [tasks.integration]
-description = "Run integration tests via pytest"
-run = "uv run pytest tests/test_integration"
+run = "uv run pytest tests/test_integration tests/integration"
+description = "Run integration tests (layer orchestration, init/export cycle)"
+
+[tasks."test:one"]
+run = "uv run pytest"
+description = "Run a single focused test (e.g. mise run test:one -- tests/test_x.py -k name)"
+alias = "test-one"
+
+[tasks.build]
+run = "uv build"
+description = "Build sdist + wheel into dist/"
+
 
 [tasks.doctor]
-run = "python3 --version && uv --version"
+description = "Check toolchain, CLI, and git hooks"
+run = '''
+set -euo pipefail
+python3 --version
+uv --version
+uv run deviate --version
+if [ "$(git config core.hooksPath)" = ".githooks" ]; then echo "hooks: ok";
+else echo "hooks: MISSING (run mise run setup)"; exit 1; fi
+'''
+
+[tasks."verify:cli"]
+description = "Verify installed CLI version matches pyproject and --help exits 0"
+alias = "verify-cli"
+run = '''
+set -euo pipefail
+ver=$(uv run deviate --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+want=$(grep -m1 '^version' pyproject.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+[ "$ver" = "$want" ] || { echo "version mismatch: cli=$ver pyproject=$want"; exit 1; }
+uv run deviate --help >/dev/null
+echo "cli: ok ($ver)"
+'''
+
+[tasks."verify:setup"]
+description = "Verify deviate setup provisions .deviate/ + agent commands in a fresh dir"
+alias = "verify-setup"
+run = "bash scripts/verify/setup"
+
+[tasks.verify]
+depends = ["verify:cli", "verify:setup"]
+description = "Run all app verification checks"
 
 [tasks.e2e]
 description = "Run E2E tests via bats"
