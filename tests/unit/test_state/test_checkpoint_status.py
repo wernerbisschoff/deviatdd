@@ -31,6 +31,12 @@ def test_task_record_accepts_checkpoint_failed() -> None:
 
 
 @pytest.mark.behavioral
+def test_task_record_accepts_hitl_pending() -> None:
+    rec = TaskRecord(**_base_kwargs(status="HITL_PENDING"))
+    assert rec.status == "HITL_PENDING"
+
+
+@pytest.mark.behavioral
 def test_failing_handover_appends_checkpoint_failed_with_classification_and_rationale(
     tmp_path: Path,
 ) -> None:

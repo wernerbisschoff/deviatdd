@@ -52,6 +52,11 @@ from deviate.core.judge_evidence import (
     evaluate_judge_evidence,
     resolve_task_ac_tokens,
 )
+from deviate.core.judge_contradiction import (
+    JudgeContradiction,
+    detect_judge_requirement_contradiction,
+    normalize_feedback,
+)
 from deviate.core.judge_policy import (
     JUDGE_ACTIONS as _JUDGE_ACTIONS,  # noqa: F401  (compatibility re-export)
     REVERT_JUDGE_ACTIONS as _REVERT_JUDGE_ACTIONS,
@@ -2526,9 +2531,9 @@ def _append_judge_feedback(tasks_md: Path, task_id: str, feedback: str) -> int |
     return len(candidate)
 
 
-def _task_train_feedback(root: Path, task: dict, current: str = "") -> str:
-    """Combine complete JUDGE rounds and any unrecorded retry instruction."""
-    rounds = []
+def _task_judge_feedback_rounds(root: Path, task: dict) -> list[str]:
+    """Return persisted ``Judge Feedback`` rounds for this task card."""
+    rounds: list[str] = []
     for block in _extract_labeled_sections(
         _task_card_text(root, task), {"judge feedback"}
     ):
@@ -2536,12 +2541,56 @@ def _task_train_feedback(root: Path, task: dict, current: str = "") -> str:
         first = lines[0].split("**Judge Feedback**:", 1)[1].strip()
         body = [line.removeprefix("    ") for line in lines[1:]]
         rounds.append("\n".join([first, *body]).strip())
+    return rounds
+
+
+def _task_train_feedback(root: Path, task: dict, current: str = "") -> str:
+    """Combine complete JUDGE rounds and any unrecorded retry instruction."""
+    rounds = _task_judge_feedback_rounds(root, task)
     sections = [
         f"JUDGE feedback round {i}:\n{feedback}" for i, feedback in enumerate(rounds, 1)
     ]
     if current.strip() and current.strip() not in rounds:
         sections.append(f"Current retry feedback:\n{current.strip()}")
     return "\n\n".join(sections)
+
+
+def _collect_prior_judge_reject_feedbacks(
+    root: Path,
+    task: dict,
+    session: SessionState,
+    current: str,
+) -> list[str]:
+    """Prior JUDGE reject payloads from verdicts, the task card, and session."""
+    tid = str(task.get("id") or "")
+    issue_id = str(task.get("issue_id") or "")
+    current_norm = normalize_feedback(current)
+    rounds: list[str] = []
+    seen: set[str] = set()
+
+    def _add(text: str) -> None:
+        body = (text or "").strip()
+        if not body:
+            return
+        key = normalize_feedback(body)
+        if not key or key == current_norm or key in seen:
+            return
+        if _is_green_train_dump(body):
+            return
+        seen.add(key)
+        rounds.append(body)
+
+    for row in read_verdicts_records(root, issue_id, tid):
+        if row.get("event"):
+            continue
+        if row.get("blast") not in {"green", "red"}:
+            continue
+        _add(str(row.get("feedback") or ""))
+    if not rounds:
+        for block in _task_judge_feedback_rounds(root, task):
+            _add(block)
+    _add(session.train_feedback)
+    return rounds
 
 
 # Defensive regex matching RED-phase task-id characters used by
@@ -4539,6 +4588,107 @@ def _confirm_manual_judge_revert(
     )
 
 
+def _halt_judge_requirement_contradiction(
+    task: dict,
+    ledger_path: Path,
+    session: SessionState,
+    session_path: Path,
+    c: Console,
+    *,
+    root: Path,
+    manifest: HandoverManifest,
+    action: str | None,
+    next_action_raw: str,
+    feedback: str,
+    feedback_source: str,
+    found: JudgeContradiction,
+) -> NoReturn:
+    """Persist the conflicting round and halt for a SPEC / HITL decision.
+
+    Does not roll back or increment GREEN/RED train counters. The rejected
+    GREEN stays inspectable. ``LOOP_DETECTED`` telemetry is unchanged and
+    does not halt on its own.
+    """
+    tid = str(task.get("id") or "?")
+    tasks_md = _resolve_tasks_md(root, task)
+    if tasks_md is not None:
+        _append_judge_feedback(tasks_md, tid, feedback)
+    _append_judge_verdict_record(
+        task,
+        manifest,
+        session=session,
+        next_action=action,
+        next_action_raw=next_action_raw,
+        feedback=feedback,
+        feedback_source=feedback_source,
+    )
+    issue_id = str(task.get("issue_id") or "")
+    append_verdicts_record(
+        root,
+        issue_id,
+        tid,
+        {
+            "event": "requirement_contradiction",
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "task_id": tid,
+            "issue_id": issue_id,
+            "kind": found.kind,
+            "summary": found.summary,
+            "side_a": found.prior,
+            "side_b": found.current,
+            "shared_tokens": list(found.shared_tokens),
+        },
+    )
+    session.train_feedback = feedback
+    session.judge_rejected = True
+    session.save(session_path)
+    hitl = HandoverManifest.model_construct(
+        phase="JUDGE",
+        status="ERROR",
+        task_id=tid,
+        reason="judge_requirement_contradiction",
+        summary=found.summary,
+        contract_drift={
+            "symptom": found.summary,
+            "side_a": found.prior,
+            "side_b": found.current,
+        },
+        hitl_options={
+            "recommended": "choose_spec_interpretation",
+            "choose_spec_interpretation": {
+                "patch": (
+                    "Pick one interpretation (strict identity matching vs "
+                    "preserve existing fixtures) and correct the conflicting "
+                    "test, fixture, or requirement."
+                ),
+                "trade_off": "Stops GREEN/RED training before TRAIN_EXHAUSTED.",
+            },
+        },
+        escalates_to=(
+            "operator (SPEC / HITL: resolve contradictory JUDGE requirements)"
+        ),
+    )
+    _log_run(
+        "JUDGE_REQUIREMENT_CONTRADICTION",
+        task_id=tid,
+        kind=found.kind,
+        summary=found.summary,
+        side_a=found.prior[:240],
+        side_b=found.current[:240],
+    )
+    c.print(f"  [yellow]JUDGE_REQUIREMENT_CONTRADICTION[/] {tid}: {found.summary}")
+    _render_hitl_banner(hitl, c, tid, "JUDGE")
+    try:
+        _append_status_transition(
+            task, "HITL_PENDING", ledger_path, reason=found.summary
+        )
+    except Exception as exc:
+        c.print(f"  [yellow]LEDGER_UPDATE_FAILED[/] {exc}")
+    raise HitlEscalationError(
+        f"JUDGE requirement contradiction for {tid}: {found.summary}"
+    )
+
+
 def _apply_judge_verdict(
     task: dict,
     ledger_path: Path,
@@ -4570,6 +4720,10 @@ def _apply_judge_verdict(
     ``assume_yes`` defaults True so auto ``micro run`` / ``_run_judge_phase``
     revert immediately. Manual ``judge post`` passes False unless the
     operator supplied ``--yes`` / ``--revert``.
+
+    Successive reject Requirement/Correction texts are compared before
+    rollback. A polar flip or A-B-A oscillation raises
+    ``HitlEscalationError`` (GH-230) instead of consuming more train budget.
     """
     tid = task.get("id", "?")
     schema_errors = _judge_manifest_schema_errors(manifest)
@@ -4711,6 +4865,25 @@ def _apply_judge_verdict(
             raise PhaseFailedError(
                 f"JUDGE_AGENT_NO_FEEDBACK for {tid}: judge returned "
                 f"{action} with no actionable feedback"
+            )
+        prior_rounds = _collect_prior_judge_reject_feedbacks(
+            root, task, session, feedback
+        )
+        found = detect_judge_requirement_contradiction(prior_rounds, feedback)
+        if found:
+            _halt_judge_requirement_contradiction(
+                task,
+                ledger_path,
+                session,
+                session_path,
+                c,
+                root=root,
+                manifest=manifest,
+                action=action,
+                next_action_raw=next_action_raw,
+                feedback=feedback,
+                feedback_source=feedback_source,
+                found=found,
             )
         feedback_preview = feedback.replace("\n", " ")[:200]
         c.print(

@@ -139,6 +139,7 @@ Verification must distinguish a behavioral assertion failure from setup, import,
 
 Do not cite `path:line` locations from commits the rollback removes.
 Write a durable rewrite contract that remains valid after rollback.
+The runner compares successive rejection Requirement/Correction texts. Mutually incompatible fixture or identity outcomes (strict matching vs preserve a conflicting existing test) escalate to HITL instead of more GREEN/RED training — make each Requirement/Correction a single interpretation.
 Keep operator observations and non-blocking suggestions in `summary`.
 Never include `REFACTOR NOTE:` in rejection feedback. That prefix is reserved for optional advice on a passing verdict.
 
