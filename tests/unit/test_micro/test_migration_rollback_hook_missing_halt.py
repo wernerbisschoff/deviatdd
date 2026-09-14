@@ -33,9 +33,7 @@ from tests.conftest import _git_env
 
 _TASK_ID = "TSK-004-01"
 _ISSUE_ID = "001-004"
-_RATIONALE = (
-    "GREEN added currency_symbol without restoring the catalog after rollback"
-)
+_RATIONALE = "GREEN added currency_symbol without restoring the catalog after rollback"
 
 
 def _rev_parse(repo: Path, rev: str = "HEAD") -> str:
@@ -210,7 +208,9 @@ class TestMigrationRollbackHookMissingHalt:
         session = SessionState.load(session_path)
         buf = io.StringIO()
         console = Console(file=buf, force_terminal=False, width=200)
-        success = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        success = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
 
         with (
             chdir(tmp_git_repo),
@@ -218,7 +218,9 @@ class TestMigrationRollbackHookMissingHalt:
             patch("deviate.cli.micro._make_agent_output_callback", return_value=None),
             patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
             patch("deviate.cli.micro._build_auto_prompt", return_value="# judge"),
-            patch("deviate.cli.micro._load_skill_content", return_value="# JUDGE skill"),
+            patch(
+                "deviate.cli.micro._load_skill_content", return_value="# JUDGE skill"
+            ),
             patch(
                 "deviate.cli.micro._invoke_agent",
                 return_value=(_violation(), ""),
@@ -261,7 +263,9 @@ class TestMigrationRollbackHookMissingHalt:
                 "GH-240: _finish_tdd_cycle must not run after hook-missing"
             )
 
-        success = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        success = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
         buf = io.StringIO()
 
         with (
@@ -270,7 +274,9 @@ class TestMigrationRollbackHookMissingHalt:
             patch("deviate.cli.micro._make_agent_output_callback", return_value=None),
             patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
             patch("deviate.cli.micro._build_auto_prompt", return_value="# judge"),
-            patch("deviate.cli.micro._load_skill_content", return_value="# JUDGE skill"),
+            patch(
+                "deviate.cli.micro._load_skill_content", return_value="# JUDGE skill"
+            ),
             patch(
                 "deviate.cli.micro._invoke_agent",
                 return_value=(_violation(), ""),
