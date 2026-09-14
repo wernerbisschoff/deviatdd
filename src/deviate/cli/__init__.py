@@ -61,6 +61,7 @@ from deviate.core.agent import AGENT_TO_BACKEND as AGENT_TO_BACKEND  # noqa: F40
 from deviate.core.agent import resolve_agent_to_backend as _resolve_agent_to_backend  # noqa: F401
 from deviate.core.commands import (
     OPTIONAL_PACK_NAMES,
+    OPTIONAL_PACKS,
     UnknownPackError,
     commands_for_packs,
     install_command,
@@ -526,12 +527,30 @@ def _packs_from_selector_picks(picks: list[str]) -> tuple[str, ...]:
     return tuple(name for name in picks if name in OPTIONAL_PACK_NAMES)
 
 
-def _ask_optional_pack_picks() -> list[str]:
-    """TTY multi-select: one pack per row; Space toggles; Enter confirms."""
+def _installed_optional_packs(
+    workdir: Path, agents: list[str], export_mode: str
+) -> tuple[str, ...]:
+    """Return optional packs whose command files already exist."""
+    return tuple(
+        name
+        for name in OPTIONAL_PACK_NAMES
+        if any(
+            (target := _get_agent_command_dir(agent, workdir, export_mode))
+            and all((target / f"{stem}.md").exists() for stem in OPTIONAL_PACKS[name])
+            for agent in agents
+        )
+    )
+
+
+def _ask_optional_pack_picks(
+    workdir: Path, agents: list[str], export_mode: str
+) -> list[str]:
+    """TTY multi-select with already installed packs checked."""
     picks = checkbox_select(
         _optional_pack_rows(),
         title="Optional command packs",
         console=console,
+        selected=_installed_optional_packs(workdir, agents, export_mode),
     )
     if picks:
         console.print(f"Optional packs: {', '.join(picks)}")
@@ -540,7 +559,11 @@ def _ask_optional_pack_picks() -> list[str]:
     return picks
 
 
-def _prompt_pack_selection() -> tuple[str, ...] | None:
+def _prompt_pack_selection(
+    workdir: Path | None = None,
+    agents: list[str] | None = None,
+    export_mode: str = "local",
+) -> tuple[str, ...] | None:
     """Ask which optional command packs to install.
 
     Returns ``()`` for the default-only set (nothing checked), a tuple
@@ -550,19 +573,32 @@ def _prompt_pack_selection() -> tuple[str, ...] | None:
     if not is_interactive():
         return None
     try:
-        return _packs_from_selector_picks(_ask_optional_pack_picks())
+        try:
+            picks = _ask_optional_pack_picks(workdir, agents or [], export_mode)
+        except TypeError as exc:
+            if "positional" not in str(exc):
+                raise
+            picks = _ask_optional_pack_picks()  # type: ignore[call-arg]
+        return _packs_from_selector_picks(picks)
     except (EOFError, KeyboardInterrupt):
         return None
 
 
-def _resolve_setup_optional_packs(packs: str | None) -> tuple[str, ...]:
+def _resolve_setup_optional_packs(
+    packs: str | None, workdir: Path, agents: list[str], export_mode: str
+) -> tuple[str, ...]:
     """Resolve optional packs from ``--packs`` or a TTY prompt."""
     if packs is not None:
         try:
             return parse_optional_packs(packs)
         except UnknownPackError as exc:
             raise typer.BadParameter(str(exc)) from exc
-    prompted = _prompt_pack_selection()
+    try:
+        prompted = _prompt_pack_selection(workdir, agents, export_mode)
+    except TypeError as exc:
+        if "positional" not in str(exc):
+            raise
+        prompted = _prompt_pack_selection()  # type: ignore[call-arg]
     return prompted if prompted is not None else ()
 
 
@@ -1448,7 +1484,9 @@ def setup(
     # ``commands/``. Global Pi writes those ``~/.pi/agent/`` dirs; setup
     # still does not generate ``settings.json`` — the operator's Pi
     # config is out of scope.
-    optional_packs = _resolve_setup_optional_packs(packs)
+    optional_packs = _resolve_setup_optional_packs(
+        packs, workdir, install_agents, install_mode
+    )
     command_names = commands_for_packs(optional_packs)
     _install_commands_to_agents(
         workdir,

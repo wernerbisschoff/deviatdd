@@ -203,16 +203,18 @@ def checkbox_select(
     console: Console | None = None,
     read_key: Callable[[], str] | None = None,
     drain_pending: bool = False,
+    selected: Sequence[str] = (),
 ) -> list[str]:
-    """One option per row. Space toggles; Enter confirms. Default: none.
+    """One option per row. Space toggles; Enter confirms.
 
-    ``read_key`` is a no-arg callable used by tests to drive the loop
-    without a real TTY. Production leaves it unset, flushes pending
-    stdin, and reads the terminal.
+    ``selected`` controls the initially checked rows.
     """
     if not options:
         return []
-    session = CheckboxSession(options=tuple(options))
+    session = CheckboxSession(
+        options=tuple(options),
+        selected=set(selected) & set(options),
+    )
     if read_key is None:
         _flush_pending_input()
         key_fn: Callable[[], str] = _read_key
