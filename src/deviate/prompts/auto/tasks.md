@@ -100,11 +100,12 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 **CRITICAL FORMAT RULES:**
 - `**Files**` MUST be followed by indented file paths on separate lines (not inline)
 - `**Details**` MUST be followed by indented bullet points on separate lines (not inline)
-- `**Dependency**` MUST be inline: `TSK-001-01` not on separate line
+- `**Dependency**` MUST be inline: `TSK-{issue_number}-01` not on separate line
 - Never emit per-task `Flow References` lines or `Judge Feedback` / runtime-commentary headings — the file is the ledger body
 
 **CRITICAL TASK ID CONSTRAINT:**
-- Task IDs MUST follow the format `TSK-{NNN}-{NN}:` where `NNN` is the 3-digit **issue number from `issue_id`**, never the epic number, and `NN` is the 2-digit task index within that issue, starting from `TSK-001-01:`.
+- Task IDs MUST be `TSK-{issue_number}-01`, `TSK-{issue_number}-02`, … (`TSK-{issue_number}-{NN}`).
+- `{issue_number}` is the 3-digit **suffix** of `issue_id`, never the epic prefix. Example: `issue_id` `001-004` or `ISS-001-004` → `TSK-004-01` through `TSK-004-09`. Never `TSK-001-01` (that is the epic number).
 
 **TASK STRUCTURE CONSTRAINTS** — every task MUST contain:
 - **Type**: `Feature_Batch | Infra_Batch | Domain_Batch | Bugfix | Migration | Config | Verification_Batch`
@@ -120,7 +121,7 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
   - **Refactor**: Code quality improvements, pattern alignment (only if material)
   - **Edge Cases**: Error handling, boundary conditions (only if material)
   - **Acceptance**: Only done criteria NOT covered by Verification; omit when none exist
-- **Dependency**: (Optional) `TSK-{NNN}-{NN}` from the same issue if this task requires another task to complete first (inline value)
+- **Dependency**: (Optional) `TSK-{issue_number}-{NN}` from the same issue if this task requires another task to complete first (inline value)
 
 **OUTPUT TEMPLATE** — the complete file should follow this structure:
 
@@ -131,7 +132,7 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 
 ### Tasks
 
-- TSK-{NNN}-{NN}: <Description>
+- TSK-{issue_number}-{NN}: <Description>
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: unit

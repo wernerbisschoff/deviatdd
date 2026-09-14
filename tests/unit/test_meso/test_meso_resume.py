@@ -156,6 +156,43 @@ class TestMesoIdempotentResume:
         mock_invoke.assert_not_called()
         assert "MESO_TASKS_INVALID" in capsys.readouterr().out
 
+    @patch("deviate.cli.meso._invoke_agent_phase")
+    def test_epic_prefix_task_ids_stop_without_overwrite(
+        self,
+        mock_invoke: MagicMock,
+        tmp_git_repo,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """GH-237: resume must not treat TSK-001-NN as complete for 001-004."""
+        _setup_minimal_workspace(
+            tmp_git_repo,
+            issue_id="001-004",
+            seed_plan=True,
+            seed_tasks=False,
+            seed_slug="004-crypto-withdrawal-safety",
+        )
+        plan_path = (
+            tmp_git_repo / "specs/test-epic/004-crypto-withdrawal-safety/plan.md"
+        )
+        plan_path.write_text(VALID_PLAN)
+        tasks_path = (
+            tmp_git_repo / "specs/test-epic/004-crypto-withdrawal-safety/tasks.md"
+        )
+        original = "# Tasks\n\n- TSK-001-01: First\n- TSK-001-02: Second\n"
+        tasks_path.write_text(original)
+
+        with chdir(tmp_git_repo):
+            with pytest.raises(typer.Exit):
+                _meso_run(issue_id="001-004", no_setup=True)
+
+        assert tasks_path.read_text() == original
+        mock_invoke.assert_not_called()
+        captured = capsys.readouterr().out
+        assert "MESO_TASKS_INVALID" in captured
+        assert "task IDs must use issue number 004" in captured
+        assert "TSK-001-01" in captured
+        assert "MESO_ALREADY_COMPLETE" not in captured
+
     def test_modeless_contract_fails_loud_on_resume(
         self,
         tmp_git_repo,

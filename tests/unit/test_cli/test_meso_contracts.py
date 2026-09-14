@@ -261,7 +261,7 @@ class TestMesoContracts:
                 tmp_path,
                 "ISS-001-006",
                 "# Tasks\n\n"
-                "- TSK-001-02: Crypto withdrawal\n"
+                "- TSK-006-02: Crypto withdrawal\n"
                 "  - **Type**: Feature_Batch\n"
                 "  - **Mode**: TDD\n"
                 "  - **Test Strategy**: unit\n"
@@ -286,7 +286,7 @@ class TestMesoContracts:
             assert result.exit_code != 0
             output = _plain(result.output)
             assert "MIXED_TEST_LAYER" in output
-            assert "TSK-001-02" in output
+            assert "TSK-006-02" in output
             after = subprocess.run(
                 ["git", "rev-parse", "HEAD"],
                 cwd=tmp_path,
@@ -317,7 +317,7 @@ class TestMesoContracts:
                 tmp_path,
                 "ISS-001-006",
                 "# Tasks\n\n"
-                "- TSK-001-02: Mixed stamps\n"
+                "- TSK-006-02: Mixed stamps\n"
                 "  - **Type**: Feature_Batch\n"
                 "  - **Mode**: TDD\n"
                 "  - **Test Strategy**: unit/integration\n"
@@ -339,7 +339,7 @@ class TestMesoContracts:
                 tmp_path,
                 "ISS-001-006",
                 "# Tasks\n\n"
-                "- TSK-001-01: Withdrawal unit contract\n"
+                "- TSK-006-01: Withdrawal unit contract\n"
                 "  - **Type**: Feature_Batch\n"
                 "  - **Mode**: TDD\n"
                 "  - **Test Strategy**: unit\n"
@@ -367,6 +367,207 @@ class TestMesoContracts:
             assert "create tasks.md" in log
             session = json.loads((tmp_path / ".deviate" / "session.json").read_text())
             assert session["current_phase"] == "IDLE"
+
+    def test_tasks_post_rejects_epic_prefix_ids_for_compound_issue(
+        self, tmp_path: Path
+    ) -> None:
+        """GH-237: issue_id 001-004 must not accept TSK-001-NN as success."""
+        with chdir(tmp_path):
+            tasks_md = self._write_issue_tasks(
+                tmp_path,
+                "001-004",
+                "# Tasks\n\n"
+                "- TSK-001-01: First\n"
+                "- [ ] TSK-001-02: Second\n"
+                "  - **Type**: Feature_Batch\n"
+                "  - **Mode**: TDD\n"
+                "  - **Test Strategy**: unit\n"
+                "  - **Verification**: `mise unit`\n",
+            )
+            before = tasks_md.read_text()
+
+            result = runner.invoke(cli, ["tasks", "post", "--issue-id", "001-004"])
+
+            assert result.exit_code != 0
+            output = _plain(result.output)
+            assert "MESO_TASKS_INVALID" in output
+            assert "task IDs must use issue number 004" in output
+            assert "TSK-001-01" in output
+            assert "TSK-001-02" in output
+            assert tasks_md.read_text() == before
+            session = json.loads((tmp_path / ".deviate" / "session.json").read_text())
+            assert session["current_phase"] == "TASKS"
+
+    def test_tasks_post_force_still_rejects_epic_prefix_ids(
+        self, tmp_path: Path
+    ) -> None:
+        with chdir(tmp_path):
+            self._write_issue_tasks(
+                tmp_path,
+                "001-004",
+                "# Tasks\n\n- TSK-001-01: Epic-prefixed card\n",
+            )
+
+            result = runner.invoke(
+                cli, ["tasks", "post", "--force", "--issue-id", "001-004"]
+            )
+
+            assert result.exit_code != 0
+            assert "MESO_TASKS_INVALID" in _plain(result.output)
+            assert "issue number 004" in _plain(result.output)
+
+    def test_tasks_post_accepts_issue_suffix_ids(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            self._write_issue_tasks(
+                tmp_path,
+                "001-004",
+                "# Tasks\n\n"
+                "- TSK-004-01: Withdrawal unit contract\n"
+                "  - **Type**: Feature_Batch\n"
+                "  - **Mode**: TDD\n"
+                "  - **Test Strategy**: unit\n"
+                "  - **Verification**: `mise unit`\n"
+                "  - **Files**:\n"
+                "    - `src/wallet/withdraw.py`\n"
+                "    - `tests/unit/test_crypto_withdrawal.py`\n",
+            )
+
+            result = runner.invoke(cli, ["tasks", "post", "--issue-id", "001-004"])
+
+            assert result.exit_code == 0, result.output
+            assert "MESO_TASKS_INVALID" not in result.output
+
+    def test_tasks_legacy_generates_issue_suffix_ids(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            self._setup_git_repo(tmp_path)
+            self._setup_minimal_env(
+                tmp_path, session_phase="IDLE", active_issue_id="001-004"
+            )
+            specs_dir = tmp_path / "specs"
+            issue_record = {
+                "issue_id": "001-004",
+                "type": "feature",
+                "title": "Crypto withdrawal safety",
+                "status": "BACKLOG",
+                "source_file": (
+                    "specs/001-crypto-withdrawals/issues/"
+                    "004-crypto-withdrawal-safety.md"
+                ),
+                "timestamp": "2026-01-01T00:00:00Z",
+            }
+            (specs_dir / "issues.jsonl").write_text(json.dumps(issue_record) + "\n")
+            issue_dir = specs_dir / "001-crypto-withdrawals" / "issues"
+            issue_dir.mkdir(parents=True, exist_ok=True)
+            (issue_dir / "004-crypto-withdrawal-safety.md").write_text("# Issue\n")
+
+            result = runner.invoke(cli, ["tasks", "001-004"])
+
+            assert result.exit_code == 0, result.output
+            ledger = specs_dir / "001-crypto-withdrawals" / "tasks.jsonl"
+            rows = [
+                json.loads(line)
+                for line in ledger.read_text().splitlines()
+                if line.strip()
+            ]
+            assert rows[-1]["id"] == "TSK-004-01"
+            assert rows[-1]["issue_id"] == "001-004"
+
+    def test_tasks_legacy_rejects_existing_epic_prefix_ids(
+        self, tmp_path: Path
+    ) -> None:
+        """GH-237: `deviate tasks 001-004` must not SKIP-succeed wrong IDs."""
+        with chdir(tmp_path):
+            self._setup_git_repo(tmp_path)
+            self._setup_minimal_env(
+                tmp_path, session_phase="IDLE", active_issue_id="001-004"
+            )
+            specs_dir = tmp_path / "specs"
+            issue_record = {
+                "issue_id": "001-004",
+                "type": "feature",
+                "title": "Crypto withdrawal safety",
+                "status": "BACKLOG",
+                "source_file": (
+                    "specs/001-crypto-withdrawals/issues/"
+                    "004-crypto-withdrawal-safety.md"
+                ),
+                "timestamp": "2026-01-01T00:00:00Z",
+            }
+            (specs_dir / "issues.jsonl").write_text(json.dumps(issue_record) + "\n")
+            feature_dir = (
+                specs_dir / "001-crypto-withdrawals" / "004-crypto-withdrawal-safety"
+            )
+            feature_dir.mkdir(parents=True, exist_ok=True)
+            tasks_md = feature_dir / "tasks.md"
+            original = "- TSK-001-01: Wrong epic prefix\n- TSK-001-02: Still wrong\n"
+            tasks_md.write_text(original)
+            (specs_dir / "001-crypto-withdrawals" / "tasks.jsonl").write_text(
+                json.dumps(
+                    {
+                        "id": "TSK-001-01",
+                        "issue_id": "001-004",
+                        "description": "Wrong",
+                        "status": "PENDING",
+                        "execution_mode": "TDD",
+                    }
+                )
+                + "\n"
+            )
+
+            result = runner.invoke(cli, ["tasks", "001-004"])
+
+            assert result.exit_code != 0
+            output = _plain(result.output)
+            assert "MESO_TASKS_INVALID" in output
+            assert "task IDs must use issue number 004" in output
+            assert "TSK-001-01" in output
+            assert tasks_md.read_text() == original
+            assert "SKIP" not in output
+
+    def test_tasks_pre_emits_issue_number_suffix(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            self._setup_git_repo(tmp_path)
+            self._setup_minimal_env(
+                tmp_path, session_phase="TASKS", active_issue_id="001-004"
+            )
+            specs_dir = tmp_path / "specs"
+            issue_record = {
+                "issue_id": "001-004",
+                "type": "feature",
+                "title": "Crypto withdrawal safety",
+                "status": "BACKLOG",
+                "source_file": (
+                    "specs/001-crypto-withdrawals/issues/"
+                    "004-crypto-withdrawal-safety.md"
+                ),
+                "timestamp": "2026-01-01T00:00:00Z",
+            }
+            (specs_dir / "issues.jsonl").write_text(json.dumps(issue_record) + "\n")
+            issue_dir = specs_dir / "001-crypto-withdrawals" / "issues"
+            issue_dir.mkdir(parents=True, exist_ok=True)
+            (issue_dir / "004-crypto-withdrawal-safety.md").write_text("# Issue\n")
+            feature_dir = (
+                specs_dir / "001-crypto-withdrawals" / "004-crypto-withdrawal-safety"
+            )
+            feature_dir.mkdir(parents=True, exist_ok=True)
+            (feature_dir / "plan.md").write_text(
+                "# Plan\n\n## Acceptance Contract\n\n"
+                "**Scenario AC-PLAN-001: Ready**\n"
+                "**Source Outline**: `AO-001`\n"
+                "**Upstream Traceability**: `US-001-01`, `FR-001`, `AC-001-01`\n"
+                "**Current-Code Evidence**: `src/example.py:run`\n"
+                "**Given**: A claimed issue is available.\n"
+                "**When**: Tasks pre runs.\n"
+                "**Then**: The contract includes the issue suffix.\n"
+                "**Verification Mode**: automated\n"
+            )
+
+            result = runner.invoke(cli, ["tasks", "pre", "--dry-run"])
+
+            assert result.exit_code == 0, result.output
+            contract = self._extract_contract(result.output)
+            assert contract["issue_id"] == "001-004"
+            assert contract["issue_number"] == "004"
 
     def test_tasks_pre_resolves_issue_from_branch(self, tmp_path: Path) -> None:
         """`tasks pre` derives the issue from the feature branch when the

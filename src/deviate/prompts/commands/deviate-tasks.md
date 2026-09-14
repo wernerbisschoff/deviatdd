@@ -16,7 +16,7 @@ aliases:
 
 Manual mode: run the lifecycle scripts yourself — the orchestrator will not.
 
-Task ids use the runner-enforced `TSK-NNN-NN` format.
+Task ids use the runner-enforced `TSK-{issue_suffix}-NN` format (issue-id suffix, never the epic prefix; `001-004` → `TSK-004-01`).
 
 1. Run `deviate tasks pre` to locate the active issue and emit the JSON contract on stdout.
 2. Do the task-decomposition work in the core body above.
