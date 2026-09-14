@@ -68,6 +68,23 @@ Constitution MUST violations are **CRITICAL** and must be ordered first. Little 
 
 When fully satisfied, do **not** invent a Convergence header. Leave `tasks.md` byte-unchanged and report CONVERGED.
 
+## Leftover spy tests
+
+After Micro drains, inspect this issue's tests in `in_scope_paths` before declaring convergence.
+Inspect test bodies and markers, including untagged tests.
+A spy test checks internal calls, private helpers, or private state instead of a public behavior contract.
+Check `spy` tags and internal call assertions. `behavioral` / `ac` tags do not excuse an internal-only probe.
+Preserve public behavior tests and external-boundary mocks that isolate processes, networks, or agent calls.
+Do not classify a test as disposable solely because it uses a mock.
+
+Raise an `unrequested` finding for each leftover internal spy test.
+Set `source_ref` to its test path and qualified test name, including the class when present.
+Request review and removal, or replacement with a public behavior test when it protects a required contract.
+Include the relevant plan or task reference in the summary and require the affected tests to pass.
+Do not report CONVERGED while leftover spy tests remain.
+Do not delete tests during assessment. Do not invoke `/deviate-prune` automatically.
+Use `deviate converge post` to append cleanup tasks. Reassess after Micro completes those tasks.
+
 ## Write set
 
 On gaps, call `deviate converge post` with JSON:
@@ -97,7 +114,7 @@ deviate converge post '{"findings":[]}'
 
 1. Run `deviate converge pre`. Stop on `CONVERGE_NOT_READY` or a missing-artifact message.
 2. Read only the contract paths.
-3. If present-state satisfies this issue's brief, AC-PLAN, tasks, and filled constitution MUST: run `deviate converge post '{"findings":[]}'` and report CONVERGED.
+3. Check leftover spy tests. Only when none remain and the brief, AC-PLAN, tasks, and constitution MUST are satisfied, submit empty findings and report CONVERGED.
 4. Otherwise emit findings (CRITICAL first) and run `deviate converge post '<json>'`.
 5. Do not start walkthrough, review, or `/deviate-pr`. If tasks were appended, Micro runs next.
 

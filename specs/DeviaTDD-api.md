@@ -1739,6 +1739,12 @@ uses the same `_resolve_task_context` selector as the other micro pres.
 
 The `/deviate-converge` slash command guides the agent to assess and call `pre` / `post`. The `deviatdd` skill drives `deviate run` until happy/converged; walkthrough, review, and PR stay outside that loop.
 
+After Micro drains, the assessor must inspect this issue's in-scope tests for leftover internal spy tests, including untagged tests.
+Each remaining spy produces an `unrequested` finding with a test path and qualified name as `source_ref`.
+Behavioral tags do not excuse internal-only probes. Public behavior tests and external-boundary mocks remain valid.
+The assessor must not report CONVERGED while spies remain. Cleanup tasks request review, removal, or behavioral replacement and verification.
+This is an assessment requirement, not a CLI scanner. Prune stays manual; Converge never deletes tests directly.
+
 ### 8. (Removed — Context Sync)
 
 The `deviate context` concept was evaluated and removed. Reasoning:

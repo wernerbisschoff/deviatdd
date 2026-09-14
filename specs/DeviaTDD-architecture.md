@@ -157,6 +157,11 @@ in-scope code against this issue brief, `plan.md` AC-PLAN, `tasks.md`, and fille
 constitution MUST. On gaps it appends `## Phase N: Convergence` plus PENDING
 `TSK-*` via `append_task_record`. Clean leaves `tasks.md` byte-unchanged.
 `deviate run` enters that tail when the pack is installed or `--converge` is passed.
+After Micro drains, the assessor checks this issue's in-scope tests for leftover internal spies, including untagged tests.
+It emits `unrequested` findings with test paths and qualified names; behavioral tags cannot excuse internal-only probes.
+Public behavior tests and external-boundary mocks remain valid. Remaining spies prevent the assessor from reporting CONVERGED.
+Micro handles cleanup tasks and verification before reassessment. Converge does not delete tests or automatically invoke manual Prune.
+This requirement belongs to the assessor prompt; the CLI remains a mechanical findings writer.
 
 * **Shard + acceptance outline:** `/deviate-shard` produces vertical issue packets with user stories, `AO-NNN` outcomes, edge cases, performance constraints, and scope boundaries. `GHERKIN_LEAK_DETECTED` rejects Given/When/Then in macro artifacts. Standalone `/deviate-specify` remains deprecated.
 * **[HITL Gate 2 (REMOVED)]:** The post-Tasks approval hard gate was removed. The system never blocks on human approval. `deviate run` chains meso into micro end-to-end; plan and tasks artifacts are committed to the worktree and may be reviewed out-of-band, but execution does not wait on the human.

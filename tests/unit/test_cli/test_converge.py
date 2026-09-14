@@ -588,6 +588,24 @@ class TestConvergePrompt:
         assert "append-only" in text.lower() or "append_task_record" in text
         assert "byte-unchanged" in text or "CONVERGED" in text
 
+    @pytest.mark.behavioral
+    def test_prompt_requires_leftover_spy_findings_after_drain(self) -> None:
+        text = _PROMPT.read_text(encoding="utf-8")
+        section = text.split("## Leftover spy tests", 1)[1].split("## Write set", 1)[0]
+        for requirement in (
+            "After Micro drains",
+            "in_scope_paths",
+            "untagged",
+            "`behavioral` / `ac`",
+            "external-boundary",
+            "`unrequested`",
+            "`source_ref`",
+            "Do not report CONVERGED",
+            "Do not delete tests",
+            "Do not invoke `/deviate-prune`",
+        ):
+            assert requirement in section
+
 
 class TestDeviatddSkillUntilHappy:
     @pytest.mark.behavioral
