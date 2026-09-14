@@ -3123,6 +3123,7 @@ def _preserve_agent_work(
 # repo's history is malformed), log a warning so the operator knows the
 # resolution is on best-effort grounds.
 _PRE_RED_SHA_PARENT_RE = re.compile(r"^(?:.+ )?test\([^)]+\): RED phase(?:\s|$)")
+_GREEN_PHASE_SUBJECT_RE = re.compile(r"^(?:.+ )?.+: GREEN phase(?:\s|$)")
 _JUDGE_FEEDBACK_SUBJECT_RE = re.compile(
     r"^(?:.+ )?docs\([^)]+\): add judge feedback for retry$"
 )
@@ -3317,8 +3318,32 @@ def _resolve_revert_red_boundary(root: Path, session: SessionState) -> str:
     return _git_full_sha(root, "HEAD")
 
 
+def _sha_chain_hits_green_before_red(root: Path, sha: str) -> bool:
+    """Return True when walking ``sha`` hits a GREEN-phase commit before RED.
+
+    GH-236: a docs-feedback commit stacked on GREEN (rollback never
+    reset, or reset failed) is not a GREEN-entry / TRAIN boundary.
+    Chore restores and meso docs between RED and feedback are fine.
+    """
+    current = sha.strip()
+    seen: set[str] = set()
+    while current and current not in seen:
+        seen.add(current)
+        subject = _git_commit_subject(root, current)
+        if _PRE_RED_SHA_PARENT_RE.match(subject):
+            return False
+        if _GREEN_PHASE_SUBJECT_RE.match(subject):
+            return True
+        current = _git_parent_sha(root, current)
+    return False
+
+
 def _feedback_sha_rests_on_red_phase(root: Path, sha: str) -> bool:
-    """Return True when a docs-feedback SHA chains back to a RED-phase commit."""
+    """Return True when a docs-feedback SHA chains back to a RED-phase commit.
+
+    Walk judge-feedback, meso docs, and chore restores. A GREEN-phase
+    commit before RED is not a TRAIN boundary (GH-236).
+    """
     current = sha.strip()
     seen: set[str] = set()
     while current and current not in seen:
@@ -3326,7 +3351,7 @@ def _feedback_sha_rests_on_red_phase(root: Path, sha: str) -> bool:
         subject = _git_commit_subject(root, current)
         if _PRE_RED_SHA_PARENT_RE.match(subject):
             return True
-        if not _JUDGE_FEEDBACK_SUBJECT_RE.match(subject):
+        if _GREEN_PHASE_SUBJECT_RE.match(subject):
             return False
         current = _git_parent_sha(root, current)
     return False
@@ -3360,15 +3385,15 @@ def _maybe_advance_red_sha_past_feedback(
 ) -> None:
     """Advance ``red_commit_sha`` onto the feedback commit after a real RED SHA.
 
-    GH-236: only advance when the new HEAD is itself a GREEN-entry
-    boundary (feedback that rests on a RED-phase ancestor). A
-    ``ROLLBACK_FAILED`` retry that committed feedback on GREEN must keep
-    the prior RED SHA so the next GREEN is not refused.
+    GH-236: do not advance when the feedback commit sits on GREEN
+    (rollback never reset). Chore restores and EXECUTE pre-execute
+    anchors still advance. A ``ROLLBACK_FAILED`` retry that committed
+    feedback on GREEN keeps the prior RED SHA.
     """
     if (
         fb_head
         and _is_red_phase_failing_test_sha(root, prior_red_sha)
-        and _is_red_phase_failing_test_sha(root, fb_head)
+        and not _sha_chain_hits_green_before_red(root, fb_head)
     ):
         session.red_commit_sha = fb_head
 

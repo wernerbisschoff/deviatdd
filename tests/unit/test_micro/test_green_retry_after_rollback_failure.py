@@ -78,7 +78,9 @@ def _seed_workspace(
     feedback_on_green: bool = False,
 ) -> tuple[dict, Path, str, str]:
     """Commit tasks + RED + GREEN. Return task, ledger, red SHA, green SHA."""
-    workspace = repo / "specs" / "001-crypto-withdrawals" / "004-crypto-withdrawal-safety"
+    workspace = (
+        repo / "specs" / "001-crypto-withdrawals" / "004-crypto-withdrawal-safety"
+    )
     workspace.mkdir(parents=True, exist_ok=True)
     source = "specs/001-crypto-withdrawals/issues/004-crypto-withdrawal-safety.md"
     issue_md = repo / source
@@ -287,6 +289,9 @@ class TestGreenRetryAfterRollbackFailure:
         task, ledger, red_sha, _green = _seed_workspace(
             tmp_git_repo, feedback_on_green=True
         )
+        red_row = TaskRecord.model_validate(task)
+        red_row.status = "RED"
+        ledger.open("a", encoding="utf-8").write(red_row.model_dump_json() + "\n")
         feedback_sha = _rev_parse(tmp_git_repo)
         session_path = tmp_git_repo / ".deviate" / "session.json"
         session = SessionState.load(session_path)
