@@ -334,6 +334,48 @@ def validate_task_id(task_id: str) -> bool:
     return bool(re.match(r"^TSK-\d{3}-\d{2}$", task_id))
 
 
+_TASK_HEAD_ID_RE = re.compile(
+    r"^\s*-\s+(?:\[(?:x| )\]\s+)?(TSK-(\d{3})-\d{2}):",
+    re.MULTILINE,
+)
+
+
+def task_issue_ordinal(issue_id: str) -> str:
+    """Return the 3-digit issue suffix used in ``TSK-{ordinal}-{NN}`` IDs.
+
+    ``001-004`` and ``ISS-001-004`` both yield ``004``. Never the epic prefix.
+    """
+    m = re.search(r"(\d+)$", issue_id.strip())
+    raw = m.group(1) if m else issue_id.strip()
+    digits = "".join(ch for ch in raw if ch.isdigit()) or "0"
+    return digits.zfill(3)
+
+
+def format_task_id(issue_id: str, index: int) -> str:
+    """Build ``TSK-{issue_suffix}-{NN}`` for *issue_id* and 1-based *index*."""
+    return f"TSK-{task_issue_ordinal(issue_id)}-{index:02d}"
+
+
+def mismatched_task_ids(content: str, issue_id: str) -> list[str]:
+    """Task-header IDs whose ordinal is not the issue-id suffix."""
+    expected = task_issue_ordinal(issue_id)
+    seen: list[str] = []
+    for match in _TASK_HEAD_ID_RE.finditer(content):
+        task_id, ordinal = match.group(1), match.group(2)
+        if ordinal != expected and task_id not in seen:
+            seen.append(task_id)
+    return seen
+
+
+def task_ids_issue_mismatch_message(content: str, issue_id: str) -> str | None:
+    """``MESO_TASKS_INVALID`` detail, or ``None`` when every header matches."""
+    invalid = mismatched_task_ids(content, issue_id)
+    if not invalid:
+        return None
+    expected = task_issue_ordinal(issue_id)
+    return f"task IDs must use issue number {expected}: {', '.join(invalid)}"
+
+
 def validate_source_file(source_file: str, epic_slug: str) -> bool:
     """Validate a shard manifest's ``source_file`` against the issue registry pattern.
 

@@ -637,6 +637,20 @@ class TestBehaviorPreservationTasksPrompt:
             assert "wallet" not in rules
 
 
+class TestTasksPromptIssueSuffixIds:
+    """GH-237: generator must name the issue suffix, not the epic prefix."""
+
+    def test_auto_tasks_uses_issue_suffix_example(self) -> None:
+        prompt = _read_template("tasks.md")
+        assert "001-004" in prompt
+        assert "TSK-004-01" in prompt
+        assert (
+            "never the epic prefix" in prompt.lower()
+            or "never the epic number" in prompt.lower()
+        )
+        assert "starting from `TSK-001-01:`" not in prompt
+
+
 class TestVerificationBatchImmediateRouting:
     """GH-57: planner prompts must lock Verification_Batch → IMMEDIATE."""
 

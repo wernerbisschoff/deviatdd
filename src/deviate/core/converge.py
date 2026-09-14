@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from deviate.cli._common import _extract_issue_num
+from deviate.core.validation import format_task_id
 from deviate.core.commit import stage_and_commit
 from deviate.core.convention import format_commit_message
 from deviate.core.issues import resolve_issue_artifact_path
@@ -128,10 +128,9 @@ def max_phase_number(tasks_text: str) -> int:
 
 
 def next_task_ids(issue_id: str, tasks_text: str, count: int) -> list[str]:
-    ordinal = _extract_issue_num(issue_id).zfill(3)
     used = [int(match.group(2)) for match in _TASK_ID_RE.finditer(tasks_text)]
     start = (max(used) + 1) if used else 1
-    return [f"TSK-{ordinal}-{n:02d}" for n in range(start, start + count)]
+    return [format_task_id(issue_id, n) for n in range(start, start + count)]
 
 
 def sort_findings(findings: list[ConvergenceFinding]) -> list[ConvergenceFinding]:

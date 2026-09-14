@@ -7,7 +7,10 @@ from deviate.core.validation import (
     ARTIFACT_VALIDATORS,
     PRD_CONTRACT_SECTIONS,
     extract_section_body,
+    format_task_id,
     repair_missing_verification_mode,
+    task_ids_issue_mismatch_message,
+    task_issue_ordinal,
     validate_acceptance_contract,
     validate_acceptance_outline,
     validate_artifact,
@@ -509,6 +512,32 @@ class TestValidateTaskId:
         assert validate_task_id("TSK-007-1") is False
         assert validate_task_id("TSK-07-01") is False
         assert validate_task_id("") is False
+
+
+class TestTaskIssueOrdinal:
+    def test_compound_issue_id_uses_suffix_not_epic(self) -> None:
+        assert task_issue_ordinal("001-004") == "004"
+        assert task_issue_ordinal("ISS-001-004") == "004"
+        assert format_task_id("001-004", 1) == "TSK-004-01"
+        assert format_task_id("ISS-001-004", 9) == "TSK-004-09"
+
+    def test_legacy_and_single_ordinal_ids(self) -> None:
+        assert task_issue_ordinal("ISS-001") == "001"
+        assert task_issue_ordinal("ISS-001-006") == "006"
+        assert format_task_id("ISS-001-006", 1) == "TSK-006-01"
+
+    def test_mismatch_message_lists_epic_prefixed_headers(self) -> None:
+        body = (
+            "# Tasks\n\n"
+            "- TSK-001-01: First\n"
+            "- [ ] TSK-001-02: Checkbox\n"
+            "- TSK-004-03: Already correct\n"
+        )
+        message = task_ids_issue_mismatch_message(body, "001-004")
+        assert message == ("task IDs must use issue number 004: TSK-001-01, TSK-001-02")
+        assert (
+            task_ids_issue_mismatch_message("- TSK-004-01: Ok\n", "ISS-001-004") is None
+        )
 
 
 class TestValidateSourceFile:

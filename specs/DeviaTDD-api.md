@@ -657,7 +657,7 @@ Validates plan.md exists, is non-empty, and contains a valid Acceptance Contract
 
 #### `deviate tasks post [--force] [--issue-id]`
 
-Validates tasks.md exists, is non-empty, and that no TDD card names more than one of `unit` / `integration` / `e2e` (two Test Strategy stamps, two layer write dirs in **Files**, or two layer Verification commands). Mixed TDD cards fail as `MIXED_TEST_LAYER` (`src/deviate/core/tasks_ledger.py::validate_tdd_task_layers`) and are not committed — `--force` does not skip this check. Issue-end `[VERIFY]` / `[E2E]` `Verification_Batch` / `IMMEDIATE` cards may still list the full ladder. Details / Rationale are not scanned (unit cards say "forbid `tests/integration`"). Then commits the file and transitions session to IDLE. There is no human-approval step between Tasks and Micro — the system auto-advances. Tasks map work to `AC-PLAN-NNN` scenario IDs. Historical consumer `tasks.md` files are not rewritten; `generate_jsonl_from_md` still parses mixed cards so existing queues can drain until the operator regenerates.
+Validates tasks.md exists, is non-empty, that every task-header ID uses `TSK-{issue_suffix}-{NN}` (the last numeric component of `issue_id`, never the epic prefix: `001-004` / `ISS-001-004` → `TSK-004-01`), and that no TDD card names more than one of `unit` / `integration` / `e2e` (two Test Strategy stamps, two layer write dirs in **Files**, or two layer Verification commands). Mismatched IDs fail as `MESO_TASKS_INVALID task IDs must use issue number {suffix}: …` (`src/deviate/core/validation.py::task_ids_issue_mismatch_message`) and are not committed or rewritten — `--force` does not skip this check. Mixed TDD cards fail as `MIXED_TEST_LAYER` (`src/deviate/core/tasks_ledger.py::validate_tdd_task_layers`) and are not committed — `--force` does not skip this check. Issue-end `[VERIFY]` / `[E2E]` `Verification_Batch` / `IMMEDIATE` cards may still list the full ladder. Details / Rationale are not scanned (unit cards say "forbid `tests/integration`"). Then commits the file and transitions session to IDLE. There is no human-approval step between Tasks and Micro — the system auto-advances. Tasks map work to `AC-PLAN-NNN` scenario IDs. Historical consumer `tasks.md` files are not rewritten; `generate_jsonl_from_md` still parses mixed cards so existing queues can drain until the operator regenerates.
 
 #### `deviate run [--issue] [--force] [--converge]`
 
@@ -667,7 +667,9 @@ Runs setup → Plan → Tasks and chains into `deviate micro run --all` to drain
 
 * **Source:** `src/deviate/cli/meso.py`
 * **Description:** Direct positional-argument interface. Generates a single `TaskRecord`
-  with `TSK-{NNN}-{NN}` id, appends to `tasks.jsonl`, transitions through TASKS -> IDLE.
+  with `TSK-{issue_suffix}-{NN}` id (suffix of `issue_id`, e.g. `001-004` → `TSK-004-01`),
+  appends to `tasks.jsonl`, transitions through TASKS -> IDLE. Existing `tasks.md`
+  whose headers use the epic prefix fail as `MESO_TASKS_INVALID` instead of SKIP-success.
 
 #### `deviate pr pre`
 
@@ -1566,6 +1568,7 @@ Tasks without assigned AC references retain the previous full-context behavior. 
     and return the current worktree path.
   * Existing `plan.md` missing a `**Verification Mode**:` line emits `MESO_PLAN_INVALID` citing the scenario id and stops without overwrite; no default is inserted. A genuinely invalid `plan.md` (missing clauses, bad AO traceability, illegal/duplicated mode) emits `MESO_PLAN_INVALID` the same way.
   * Existing empty `tasks.md`: emit `MESO_TASKS_INVALID` and stop without overwrite.
+  * Existing `tasks.md` whose `TSK-NNN-NN` headers use the epic prefix instead of the issue suffix (e.g. `TSK-001-01` for `issue_id` `001-004`): emit `MESO_TASKS_INVALID task IDs must use issue number 004: …` and stop without overwrite.
   A fresh claim does not use inherited main-branch artifacts as resume evidence. It runs Plan
   and Tasks in the new worktree.
 * **Error Recovery:** Agent non-zero exit (`AgentSubprocessError`) or

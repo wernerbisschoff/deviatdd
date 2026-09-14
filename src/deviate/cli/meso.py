@@ -40,6 +40,9 @@ from deviate.core.repo import gather_git_state
 from deviate.core.tasks_ledger import MixedTestLayerError, validate_tdd_task_layers
 from deviate.core.validation import (
     ISSUE_TRACEABILITY_SECTIONS,
+    format_task_id,
+    task_ids_issue_mismatch_message,
+    task_issue_ordinal,
     validate_acceptance_contract,
     validate_issue_traceability,
     validate_sections,
@@ -1152,11 +1155,23 @@ def _plan_post(force: bool = False, issue_id: str | None = None) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _halt_on_mismatched_task_ids(content: str, issue_id: str) -> None:
+    """Fail closed when task headers use the epic prefix instead of the issue suffix."""
+    message = task_ids_issue_mismatch_message(content, issue_id)
+    if message:
+        console.print(f"[red]MESO_TASKS_INVALID[/] {message}")
+        raise typer.Exit(code=1)
+
+
 def _tasks_legacy(issue_id: str) -> None:
     record = _resolve_and_validate_issue(issue_id, "TASKS")
     session_path = _resolve_dot_deviate() / "session.json"
     session = SessionState.load(session_path)
     issue_slug = _resolve_bucket_dir(record.source_file)
+    slug = _source_stem(record.source_file)
+    tasks_md = _resolve_specs_root() / issue_slug / slug / "tasks.md"
+    if tasks_md.exists():
+        _halt_on_mismatched_task_ids(tasks_md.read_text(encoding="utf-8"), issue_id)
     tasks_jsonl = _resolve_specs_root() / issue_slug / "tasks.jsonl"
     if tasks_jsonl.exists():
         console.print(f"[yellow]SKIP[/] tasks already provisioned for {issue_slug}")
@@ -1165,8 +1180,7 @@ def _tasks_legacy(issue_id: str) -> None:
     session.active_issue_id = issue_id
     session.save(session_path)
 
-    # Generate TSK-NNN-NN: extract issue number, count existing tasks, increment
-    issue_num = _extract_issue_num(issue_id)
+    # Generate TSK-NNN-NN: extract issue suffix, count existing tasks, increment
     existing_ids: list[dict] = []
     if tasks_jsonl.exists():
         for line in tasks_jsonl.read_text(encoding="utf-8").splitlines():
@@ -1185,7 +1199,7 @@ def _tasks_legacy(issue_id: str) -> None:
             if idx > existing_max:
                 existing_max = idx
     next_index = existing_max + 1
-    task_id = f"TSK-{issue_num}-{next_index:02d}"
+    task_id = format_task_id(issue_id, next_index)
 
     task = TaskRecord(
         id=task_id,
@@ -1296,6 +1310,7 @@ def _tasks_pre(force: bool = False, dry_run: bool = False) -> None:
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     contract = {
         "issue_id": issue_id,
+        "issue_number": task_issue_ordinal(issue_id) if issue_id else "",
         "spec_path": spec_path,
         "tasks_target": tasks_target,
         "worktree_full": worktree_full,
@@ -1337,23 +1352,8 @@ def _tasks_post(
         console.print(f"[red]TASKS_NOT_FOUND[/] {tasks_md}")
         raise typer.Exit(code=1)
     content = tasks_md.read_text(encoding="utf-8").strip()
-    if content and not force:
-        issue_parts = resolved_issue_id.split("-")
-        expected_task_prefix = (
-            issue_parts[1].zfill(3)
-            if len(issue_parts) >= 3 and issue_parts[0] == "ISS"
-            else _extract_issue_num(resolved_issue_id).zfill(3)
-        )
-        task_ids = re.findall(r"^\s*-\s+(TSK-(\d{3})-\d{2}):", content, re.MULTILINE)
-        invalid_ids = [
-            task_id for task_id, ordinal in task_ids if ordinal != expected_task_prefix
-        ]
-        if invalid_ids:
-            console.print(
-                f"[red]MESO_TASKS_INVALID[/] task IDs must use issue number "
-                f"{expected_task_prefix}: {', '.join(invalid_ids)}"
-            )
-            raise typer.Exit(code=1)
+    if content:
+        _halt_on_mismatched_task_ids(content, resolved_issue_id)
     if not content and not force:
         console.print("[red]TASKS_EMPTY[/] tasks.md is empty")
         raise typer.Exit(code=1)
@@ -1850,7 +1850,9 @@ def _discover_claimable_issue(local: bool = False) -> str | None:
     return None
 
 
-def _resolve_meso_resume_state(plan_path: Path, tasks_path: Path) -> str:
+def _resolve_meso_resume_state(
+    plan_path: Path, tasks_path: Path, issue_id: str | None = None
+) -> str:
     """Return PLAN, TASKS, or COMPLETE; auto-repair a missing Verification Mode."""
     if plan_path.exists():
         plan_content = plan_path.read_text(encoding="utf-8")
@@ -1867,9 +1869,12 @@ def _resolve_meso_resume_state(plan_path: Path, tasks_path: Path) -> str:
         plan_ready = False
 
     if tasks_path.exists():
-        if not tasks_path.read_text(encoding="utf-8").strip():
+        tasks_content = tasks_path.read_text(encoding="utf-8")
+        if not tasks_content.strip():
             console.print(f"[red]MESO_TASKS_INVALID[/] {tasks_path}: empty file")
             raise typer.Exit(code=1)
+        if issue_id:
+            _halt_on_mismatched_task_ids(tasks_content, issue_id)
         if not plan_ready:
             console.print(
                 f"[red]MESO_TASKS_WITHOUT_PLAN[/] {tasks_path}: "
@@ -2033,6 +2038,7 @@ def _meso_run(
     if dry_run:
         contract: dict[str, str] = {
             "issue_id": issue_id,
+            "issue_number": task_issue_ordinal(issue_id),
             "issue_title": issue_title,
             "epic_slug": epic_slug,
             "issue_slug": issue_slug,
@@ -2073,6 +2079,7 @@ def _meso_run(
     tasks_dir.mkdir(parents=True, exist_ok=True)
     contract: dict[str, object] = {
         "issue_id": issue_id,
+        "issue_number": task_issue_ordinal(issue_id),
         "issue_title": issue_title,
         "epic_slug": epic_slug,
         "issue_slug": issue_slug,
@@ -2085,7 +2092,9 @@ def _meso_run(
     plan_path = plan_dir / "plan.md"
     tasks_path = tasks_dir / "tasks.md"
     resume_state = (
-        _resolve_meso_resume_state(plan_path, tasks_path) if no_setup else "PLAN"
+        _resolve_meso_resume_state(plan_path, tasks_path, issue_id)
+        if no_setup
+        else "PLAN"
     )
 
     if resume_state == "COMPLETE":
