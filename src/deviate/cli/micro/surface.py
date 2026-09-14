@@ -3358,8 +3358,18 @@ def _maybe_advance_red_sha_past_feedback(
     prior_red_sha: str,
     fb_head: str,
 ) -> None:
-    """Advance ``red_commit_sha`` onto the feedback commit after a real RED SHA."""
-    if fb_head and _is_red_phase_failing_test_sha(root, prior_red_sha):
+    """Advance ``red_commit_sha`` onto the feedback commit after a real RED SHA.
+
+    GH-236: only advance when the new HEAD is itself a GREEN-entry
+    boundary (feedback that rests on a RED-phase ancestor). A
+    ``ROLLBACK_FAILED`` retry that committed feedback on GREEN must keep
+    the prior RED SHA so the next GREEN is not refused.
+    """
+    if (
+        fb_head
+        and _is_red_phase_failing_test_sha(root, prior_red_sha)
+        and _is_red_phase_failing_test_sha(root, fb_head)
+    ):
         session.red_commit_sha = fb_head
 
 
@@ -3482,6 +3492,16 @@ def _require_green_entry_red_sha(root: Path, session: SessionState, tid: str) ->
     """Raise when GREEN has no RED-phase failing-test boundary SHA."""
     if _is_red_phase_failing_test_sha(root, session.red_commit_sha):
         return
+    sha = session.red_commit_sha.strip()
+    if sha:
+        head = _git_full_sha(root, "HEAD")
+        raise PhaseFailedError(
+            f"DEVIATDD_BUG: ROLLBACK_BOUNDARY_MISSING; "
+            f'task_id="{tid}" '
+            f'red_commit_sha="{sha}" '
+            f'head_sha="{head}" '
+            "Recommend /deviate-green."
+        )
     raise PhaseFailedError(
         f"GREEN_ENTRY_REFUSED: {tid} has no RED-phase failing-test "
         f"commit (red_commit_sha={session.red_commit_sha!r})"
@@ -3500,8 +3520,14 @@ def _ensure_green_entry_red_sha(
     agent runs. Recover from ledger + git when the field is empty, save
     it, then apply ``_require_green_entry_red_sha`` unconditionally —
     including when ``current_phase`` is already GREEN.
+
+    GH-236: also recover when the stored SHA is present but is not a
+    GREEN-entry boundary (docs-feedback sitting on GREEN after a
+    ``ROLLBACK_FAILED`` retry). A still-unusable SHA raises
+    ``DEVIATDD_BUG: ROLLBACK_BOUNDARY_MISSING`` rather than
+    ``GREEN_ENTRY_REFUSED`` that prints the leftover SHA.
     """
-    if not _has_red_commit_boundary(session):
+    if not _is_red_phase_failing_test_sha(root, session.red_commit_sha):
         if not _recover_red_commit_boundary(root, session, tid):
             session.save(session_path)
     _require_green_entry_red_sha(root, session, tid)
@@ -5642,8 +5668,13 @@ def _invalidate_stale_forward_route(session: SessionState, task_id: str) -> bool
 def _recover_red_commit_boundary(
     root: Path, session: SessionState, task_id: str
 ) -> str:
-    """Rebuild ``session.red_commit_sha`` from ledger plus Git evidence."""
-    if _has_red_commit_boundary(session):
+    """Rebuild ``session.red_commit_sha`` from ledger plus Git evidence.
+
+    GH-236: a non-empty docs-feedback SHA that does not rest on RED is
+    not a boundary — fall through and recover the standing RED-phase
+    commit instead of returning the leftover SHA unchanged.
+    """
+    if _is_red_phase_failing_test_sha(root, session.red_commit_sha):
         _refresh_session_commit_anchors(root, session)
         return ""
     latest_status = next(
@@ -5673,7 +5704,9 @@ def _recover_red_commit_boundary(
             )
     if candidates:
         resolved = _resolve_rewritten_sha(root, candidates[0]) or candidates[0]
-        if _is_ancestor(root, resolved, "HEAD"):
+        if _is_ancestor(root, resolved, "HEAD") and _is_red_phase_failing_test_sha(
+            root, resolved
+        ):
             session.red_commit_sha = resolved
             _invalidate_stale_forward_route(session, task_id)
             _refresh_session_commit_anchors(root, session)
@@ -6217,9 +6250,9 @@ def _run_tdd_cycle_impl(
         )
 
     while not judge_passed:
-        if not _has_red_commit_boundary(session) and not _recover_red_commit_boundary(
-            root, session, tid
-        ):
+        if not _is_red_phase_failing_test_sha(
+            root, session.red_commit_sha
+        ) and not _recover_red_commit_boundary(root, session, tid):
             session.save(session_path)
         pre_green = _tdd_pre_green_decision(session, tid)
         if pre_green == "escalate":

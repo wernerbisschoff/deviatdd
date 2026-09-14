@@ -681,6 +681,13 @@ class TestGreenRedCommitShaGate:
             "when session.red_commit_sha is a docs(...): add judge feedback "
             f"commit ({docs_sha}); error={error!r}"
         )
+        assert error is not None
+        assert "DEVIATDD_BUG" in str(error)
+        assert "ROLLBACK_BOUNDARY_MISSING" in str(error)
+        assert "GREEN_ENTRY_REFUSED" not in str(error), (
+            "GH-236: a present-but-unusable SHA is DEVIATDD_BUG, not "
+            f"GREEN_ENTRY_REFUSED; error={error!r}"
+        )
 
     def test_green_invokes_agent_with_red_phase_red_commit_sha(
         self, tmp_git_repo: Path
