@@ -1338,7 +1338,12 @@ def _tasks_post(
         raise typer.Exit(code=1)
     content = tasks_md.read_text(encoding="utf-8").strip()
     if content and not force:
-        expected_task_prefix = _extract_issue_num(resolved_issue_id).zfill(3)
+        issue_parts = resolved_issue_id.split("-")
+        expected_task_prefix = (
+            issue_parts[1].zfill(3)
+            if len(issue_parts) >= 3 and issue_parts[0] == "ISS"
+            else _extract_issue_num(resolved_issue_id).zfill(3)
+        )
         task_ids = re.findall(r"^\s*-\s+(TSK-(\d{3})-\d{2}):", content, re.MULTILINE)
         invalid_ids = [
             task_id for task_id, ordinal in task_ids if ordinal != expected_task_prefix
