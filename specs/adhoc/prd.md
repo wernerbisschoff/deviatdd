@@ -883,3 +883,17 @@
   3. AC-ADHOC-060-03 / AO-061-03: Partial progress permits a bounded retry; recurrence of a resolved defect returns control.
   4. AC-ADHOC-060-04 / AO-061-04: Reload and RED restart preserve the task budget and finding history; operator stops remain durable.
   5. AC-ADHOC-060-05 / AO-061-05: Passing verdicts, advisory notes, manifest repair, and valid RED boundaries retain their distinct contracts.
+
+## FR-ADHOC-061: Execute separate application verification commands before JUDGE
+- **Description**: Generated tasks distinguish test commands from application verification commands. The runner supplies verification evidence to `JUDGE` and requires successful checks for completion.
+- **Preconditions**: An application task has an acceptance contract and declared executable checks.
+- **Inputs/Outputs**: Inputs: task commands and current candidate. Outputs: command execution evidence, correctness verdict, and gated completion or bounded correction.
+- **Source**: `specs/adhoc/issues/062-pre-judge-verification-evidence.md`, `The Problem Contract`: "The runner executes required verification before `JUDGE` and supplies execution evidence."
+- **User Stories**:
+  1. US-062-01: As an operator, I want separate test and verification commands so the runner executes each required check predictably.
+  2. US-062-02: As an operator, I want `JUDGE` to receive actual check results so completion requires executable proof and correctness review.
+- **Acceptance Outline**:
+  1. AC-ADHOC-061-01 / AO-062-01: Generated task contracts distinguish test execution from application verification.
+  2. AC-ADHOC-061-02 / AO-062-02: Required verification executes before `JUDGE`, which receives attributable execution evidence.
+  3. AC-ADHOC-061-03 / AO-062-03: Completion requires passing checks and a passing verdict, with fresh evidence after candidate changes.
+  4. AC-ADHOC-061-04 / AO-062-04: Task-local and whole-epic verification execute at their respective acceptance boundaries.
