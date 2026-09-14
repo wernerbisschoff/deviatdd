@@ -1486,6 +1486,22 @@ class TestInstallDeviatddSkill:
             "missing-boundary triage must recommend /deviate-green after evidence"
         )
 
+    def test_deviatdd_skill_classifies_missing_recovery_hook_as_env_not_ready(
+        self,
+    ) -> None:
+        """GH-240: ROLLBACK_RECOVERY_HOOK_MISSING is ENV_NOT_READY, not train."""
+        body = _resolve_skill_source()
+        assert body is not None, "deviatdd SKILL.md source not loadable"
+        assert "ROLLBACK_RECOVERY_HOOK_MISSING" in body
+        hook_idx = body.index("ROLLBACK_RECOVERY_HOOK_MISSING")
+        snippet = body[max(0, hook_idx - 40) : hook_idx + 700]
+        assert "ENV_NOT_READY" in snippet, (
+            "missing recovery-hook triage must classify as ENV_NOT_READY"
+        )
+        assert "proceeding with train feedback" in snippet
+        assert "[rollback]" in snippet
+        assert "test:reset" in snippet
+
     def test_deviatdd_skill_troubleshooting_section_matches_logger(
         self,
     ) -> None:

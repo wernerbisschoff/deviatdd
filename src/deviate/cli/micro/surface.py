@@ -2741,9 +2741,13 @@ def _rollback_hook_error(
 ) -> PhaseFailedError:
     """Build one named rollback-recovery error naming hook plus boundary."""
     hook_name = " ".join(command) if command else "[rollback] recovery hook"
-    return PhaseFailedError(
-        f"{code}: {detail} (hook={hook_name!r}, boundary={boundary_sha}, task_id={task_id!r})."
+    message = (
+        f"{code}: {detail} (hook={hook_name!r}, boundary={boundary_sha}, "
+        f"task_id={task_id!r})."
     )
+    if code in {"ROLLBACK_RECOVERY_HOOK_MISSING", "ROLLBACK_RECOVERY_HOOK_FAILED"}:
+        return EnvNotReadyError(f"ENV_NOT_READY: {message}")
+    return PhaseFailedError(message)
 
 
 def _run_rollback_recovery_hook(
@@ -3501,6 +3505,28 @@ def _require_revert_green_boundary(root: Path, session: SessionState, tid: str) 
     )
 
 
+_FATAL_ROLLBACK_RECOVERY_TOKENS = (
+    "ROLLBACK_RECOVERY_HOOK_MISSING",
+    "ROLLBACK_RECOVERY_HOOK_FAILED",
+)
+
+
+def _is_fatal_rollback_recovery_error(exc: BaseException) -> bool:
+    """True when migration rollback did not restore the catalog (GH-240)."""
+    text = str(exc)
+    return any(token in text for token in _FATAL_ROLLBACK_RECOVERY_TOKENS)
+
+
+def _unrecovered_migration_rollback_error(exc: BaseException) -> EnvNotReadyError:
+    """Hard-stop: do not TRAIN / GREEN / REFACTOR on a contaminated catalog."""
+    text = str(exc)
+    if isinstance(exc, EnvNotReadyError) and text.startswith("ENV_NOT_READY"):
+        return exc
+    if text.startswith("ENV_NOT_READY"):
+        return EnvNotReadyError(text)
+    return EnvNotReadyError(f"ENV_NOT_READY: {text}")
+
+
 def _is_fatal_missing_revert_green_boundary(action: str, exc: BaseException) -> bool:
     """Return True when rollback must stop and leave the branch intact."""
     if not isinstance(exc, PhaseFailedError):
@@ -3509,6 +3535,8 @@ def _is_fatal_missing_revert_green_boundary(action: str, exc: BaseException) -> 
     if "ROLLBACK_STALE_RED_SHA" in text or "ROLLBACK_STALE_BOUNDARY" in text:
         return True
     if "ENV_NOT_READY" in text:
+        return True
+    if _is_fatal_rollback_recovery_error(exc):
         return True
     return action == "revert_green" and "ROLLBACK_BOUNDARY_MISSING" in text
 
@@ -5184,6 +5212,9 @@ def _apply_judge_verdict(
                 if action == "revert_green" and "ROLLBACK_BOUNDARY_MISSING" in str(e):
                     _record_reject_verdict()
                     raise _missing_revert_green_harness_error(planned, task) from e
+                if _is_fatal_rollback_recovery_error(e):
+                    _record_reject_verdict()
+                    raise _unrecovered_migration_rollback_error(e) from e
                 _record_reject_verdict()
                 raise
             c.print(
@@ -6594,6 +6625,10 @@ def _run_execute_phase(
                     attempt=attempt,
                 )
             except Exception as e:
+                if isinstance(e, EnvNotReadyError) or _is_fatal_rollback_recovery_error(
+                    e
+                ):
+                    raise
                 c.print(
                     f"  [yellow]ROLLBACK_FAILED[/] {e} \u2014 proceeding with retry"
                 )
@@ -6678,9 +6713,11 @@ class JudgeRevertDeclinedError(Exception):
 class EnvNotReadyError(PhaseFailedError):
     """Isolated environment is not ready — doctor or post-rollback reset.
 
-    ``mise doctor`` failed (deps, ports, or DB not ready), or
-    ``mise run reset`` is missing / failed after a JUDGE git rollback.
-    This is an environment outage, not a RED/GREEN test outcome and not
+    ``mise doctor`` failed (deps, ports, or DB not ready),
+    ``mise run reset`` is missing / failed after a JUDGE git rollback,
+    or a migration-bearing rollback has no usable ``[rollback]`` /
+    ``test:reset`` recovery hook (GH-240). This is an environment
+    outage, not a RED/GREEN test outcome and not
     ``failure_kind: mechanical``. No phase ledger row is written. Do
     not proceed into the next RED/GREEN against a dirty catalog.
     """
