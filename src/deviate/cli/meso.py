@@ -1337,6 +1337,18 @@ def _tasks_post(
         console.print(f"[red]TASKS_NOT_FOUND[/] {tasks_md}")
         raise typer.Exit(code=1)
     content = tasks_md.read_text(encoding="utf-8").strip()
+    if content and not force:
+        expected_task_prefix = _extract_issue_num(resolved_issue_id).zfill(3)
+        task_ids = re.findall(r"^\s*-\s+(TSK-(\d{3})-\d{2}):", content, re.MULTILINE)
+        invalid_ids = [
+            task_id for task_id, ordinal in task_ids if ordinal != expected_task_prefix
+        ]
+        if invalid_ids:
+            console.print(
+                f"[red]MESO_TASKS_INVALID[/] task IDs must use issue number "
+                f"{expected_task_prefix}: {', '.join(invalid_ids)}"
+            )
+            raise typer.Exit(code=1)
     if not content and not force:
         console.print("[red]TASKS_EMPTY[/] tasks.md is empty")
         raise typer.Exit(code=1)
