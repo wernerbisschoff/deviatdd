@@ -1,11 +1,11 @@
-"""GH-236: GREEN retry after rollback recovery failure keeps the RED boundary.
+"""GH-236: GREEN retry after non-fatal rollback failure keeps the RED boundary.
 
-When JUDGE ``revert_green`` cannot finish recovery (missing migration
-hook, or any non-fatal ``ROLLBACK_FAILED``), the runner still appends
-train feedback and retries GREEN. That path must not stamp
-``session.red_commit_sha`` onto a docs-feedback commit that sits on
-GREEN, and GREEN entry must recover the standing RED-phase SHA instead
-of raising ``GREEN_ENTRY_REFUSED`` while printing that SHA.
+When JUDGE ``revert_green`` hits a non-fatal ``ROLLBACK_FAILED`` (not
+``ROLLBACK_RECOVERY_HOOK_MISSING`` — that hard-stops, GH-240), the
+runner still appends train feedback and retries GREEN. That path must
+not stamp ``session.red_commit_sha`` onto a docs-feedback commit that
+sits on GREEN, and GREEN entry must recover the standing RED-phase SHA
+instead of raising ``GREEN_ENTRY_REFUSED`` while printing that SHA.
 """
 
 from __future__ import annotations
@@ -213,37 +213,6 @@ def _drive_green(
 class TestGreenRetryAfterRollbackFailure:
     """GH-236: rollback-failure TRAIN must keep a usable RED boundary."""
 
-    def test_hook_missing_keeps_usable_red_boundary_for_green_retry(
-        self, tmp_git_repo: Path
-    ) -> None:
-        """Real migration revert with no hook still retries GREEN on RED."""
-        task, ledger, red_sha, _green = _seed_workspace(
-            tmp_git_repo, with_migration=True
-        )
-        session, output = _apply(tmp_git_repo, task, ledger)
-
-        assert "ROLLBACK_FAILED" in output, output
-        assert "ROLLBACK_RECOVERY_HOOK_MISSING" in output, output
-        assert _is_red_phase_failing_test_sha(tmp_git_repo, session.red_commit_sha), (
-            "GH-236: after hook-missing rollback the session must still "
-            f"hold a usable RED boundary; got {session.red_commit_sha!r}"
-        )
-        assert session.pending_judge_action == "revert_green"
-        session_path = tmp_git_repo / ".deviate" / "session.json"
-        invoke_count, error = _drive_green(
-            tmp_git_repo, session, session_path, ledger, task
-        )
-        assert error is None, (
-            "GH-236: GREEN retry after ROLLBACK_RECOVERY_HOOK_MISSING must "
-            f"not refuse a standing RED commit; error={error!r} "
-            f"red_commit_sha={session.red_commit_sha!r} red_sha={red_sha!r}"
-        )
-        assert invoke_count == 1, (
-            f"GH-236: GREEN agent must run after rollback-failure TRAIN; "
-            f"invoke_count={invoke_count}"
-        )
-        assert "GREEN_ENTRY_REFUSED" not in str(error or "")
-
     def test_rollback_failed_before_reset_does_not_stamp_feedback_on_green(
         self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -256,10 +225,8 @@ class TestGreenRetryAfterRollbackFailure:
             "_execute_rollback",
             lambda *a, **k: (_ for _ in ()).throw(
                 PhaseFailedError(
-                    "ROLLBACK_RECOVERY_HOOK_MISSING: migration-bearing "
-                    "rollback requires a [rollback] recovery hook "
-                    f"(hook='[rollback] recovery hook', boundary={red_sha}, "
-                    f"task_id={_TASK_ID!r})."
+                    "ROLLBACK_FAILED: git reset failed: index.lock held "
+                    f"(boundary={red_sha}, task_id={_TASK_ID!r})."
                 )
             ),
         )
