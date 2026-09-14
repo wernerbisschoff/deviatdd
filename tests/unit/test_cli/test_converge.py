@@ -331,6 +331,7 @@ class TestConvergePost:
         assert text.startswith(before)
         assert "## Phase 2: Convergence" in text
         assert "TSK-058-02" in text
+        assert "- [ ] TSK-058-02:" not in text
         assert "missing" in text
         assert "AC-PLAN-002" in text
         ledger_path = tmp_git_repo / "specs" / "adhoc" / _SLUG / "tasks.jsonl"

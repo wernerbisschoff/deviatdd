@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from deviate.cli._common import _extract_issue_num
+from deviate.core.commit import stage_and_commit
+from deviate.core.convention import format_commit_message
 from deviate.core.issues import resolve_issue_artifact_path
 from deviate.core.review_coverage import (
     resolve_issue_brief_path,
@@ -259,7 +261,7 @@ def _task_card(task_id: str, finding: ConvergenceFinding) -> str:
     if finding.taxonomy == "unrequested":
         justify = " Review, justify, or remove — do not auto-delete code."
     return (
-        f"- [ ] {task_id}: {finding.summary}\n"
+        f"- {task_id}: {finding.summary}\n"
         f"  - **Type**: Feature\n"
         f"  - **Mode**: TDD\n"
         f"  - **Test Strategy**: unit\n"
@@ -330,6 +332,13 @@ def apply_findings(
         f"{cards}"
     )
     tasks_path.write_text(text + section, encoding="utf-8")
+    stage_and_commit(
+        message=format_commit_message(
+            f"feat(converge): append phase {phase} gap tasks", root, phase="converge"
+        ),
+        files=[tasks_path, ledger_path],
+        repo=root,
+    )
     return ConvergeApplyResult(status="APPENDED", task_ids=ids, phase=phase)
 
 
