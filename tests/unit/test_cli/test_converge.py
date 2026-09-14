@@ -606,6 +606,25 @@ class TestConvergePrompt:
         ):
             assert requirement in section
 
+    @pytest.mark.behavioral
+    def test_prompt_bounds_cleanup_tasks_and_keeps_reminders_nonblocking(self) -> None:
+        text = _PROMPT.read_text(encoding="utf-8")
+        for requirement in (
+            "## Minimal issue-scoped findings",
+            "Sharing a file does not establish issue ownership",
+            "Group findings with the same corrective action",
+            "Do not append duplicate tasks",
+            "## Follow-ups and artifact reminder",
+            "Do not include follow-ups or reminders in the `findings` payload",
+            "Do not create a new issue automatically",
+            "Epic closeout is a separate review",
+            "plan.md",
+            "tasks.md",
+            "tasks.jsonl",
+            "Never delete or rewrite the append-only ledger",
+        ):
+            assert requirement in text
+
 
 class TestDeviatddSkillUntilHappy:
     @pytest.mark.behavioral

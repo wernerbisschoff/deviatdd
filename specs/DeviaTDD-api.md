@@ -1740,10 +1740,18 @@ uses the same `_resolve_task_context` selector as the other micro pres.
 The `/deviate-converge` slash command guides the agent to assess and call `pre` / `post`. The `deviatdd` skill drives `deviate run` until happy/converged; walkthrough, review, and PR stay outside that loop.
 
 After Micro drains, the assessor must inspect this issue's in-scope tests for leftover internal spy tests, including untagged tests.
-Each remaining spy produces an `unrequested` finding with a test path and qualified name as `source_ref`.
+Remaining spies produce `unrequested` findings with test paths and qualified names; group related cleanup into one task.
 Behavioral tags do not excuse internal-only probes. Public behavior tests and external-boundary mocks remain valid.
 The assessor must not report CONVERGED while spies remain. Cleanup tasks request review, removal, or behavioral replacement and verification.
 This is an assessment requirement, not a CLI scanner. Prune stays manual; Converge never deletes tests directly.
+The assessor adds only minimal issue-specification corrections, with an owning spec reference, present evidence, and a verification check.
+Group common corrections and check existing tasks before appending; do not duplicate unresolved work.
+Shared files do not establish ownership. Out-of-scope observations become non-blocking follow-ups, never findings in this issue's queue.
+Suggest an existing owning issue, or a new issue for a distinct acceptance outcome; never create issues automatically.
+Ask the operator when scope is unclear. Epic closeout remains a separate review after constituent issues complete.
+After convergence, remind the operator to review retention of the issue's `plan.md`, `tasks.md`, and `tasks.jsonl` before MR.
+Keep the artifacts under current policy. The reminder cannot authorize deletion or rewriting of append-only ledgers.
+Reminders and follow-ups do not block CONVERGED and never enter the `findings` payload or create deletion tasks.
 
 ### 8. (Removed — Context Sync)
 

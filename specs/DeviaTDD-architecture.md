@@ -162,6 +162,12 @@ It emits `unrequested` findings with test paths and qualified names; behavioral 
 Public behavior tests and external-boundary mocks remain valid. Remaining spies prevent the assessor from reporting CONVERGED.
 Micro handles cleanup tasks and verification before reassessment. Converge does not delete tests or automatically invoke manual Prune.
 This requirement belongs to the assessor prompt; the CLI remains a mechanical findings writer.
+Converge appends only minimal issue-specification corrections with owning spec references, present evidence, and concrete verification checks.
+Group related corrections, including spy cleanup, and avoid duplicate unresolved tasks. Shared files do not establish issue ownership.
+Report out-of-scope observations separately without blocking convergence; recommend the owning issue or a new issue for distinct acceptance outcomes.
+Do not create issues automatically. Ask the operator when ownership is unclear; epic closeout remains a separate review.
+On convergence, emit a non-blocking retention reminder for this issue's `plan.md`, `tasks.md`, and `tasks.jsonl` before MR.
+Keep artifacts under current policy. Never convert the reminder into deletion tasks or authorization to rewrite append-only ledgers.
 
 * **Shard + acceptance outline:** `/deviate-shard` produces vertical issue packets with user stories, `AO-NNN` outcomes, edge cases, performance constraints, and scope boundaries. `GHERKIN_LEAK_DETECTED` rejects Given/When/Then in macro artifacts. Standalone `/deviate-specify` remains deprecated.
 * **[HITL Gate 2 (REMOVED)]:** The post-Tasks approval hard gate was removed. The system never blocks on human approval. `deviate run` chains meso into micro end-to-end; plan and tasks artifacts are committed to the worktree and may be reviewed out-of-band, but execution does not wait on the human.

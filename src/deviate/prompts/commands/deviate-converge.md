@@ -68,6 +68,19 @@ Constitution MUST violations are **CRITICAL** and must be ordered first. Little 
 
 When fully satisfied, do **not** invent a Convergence header. Leave `tasks.md` byte-unchanged and report CONVERGED.
 
+## Minimal issue-scoped findings
+
+Add only the smallest set of tasks needed to satisfy this issue's approved specification.
+For each finding, cite this issue's brief/AO, AC-PLAN, or an applicable constitution MUST.
+State the observed gap and a concrete verification check.
+For `unrequested` work, cite the issue boundary it exceeds; for spy cleanup, cite the owning plan or task.
+Sharing a file does not establish issue ownership. Do not assign another issue's work to this queue.
+Do not add speculative improvements, general refactors, or extra coverage beyond the issue's required behavior.
+Group findings with the same corrective action and verification into one task, including related spy tests.
+List every affected test and spec reference in that grouped finding.
+Check existing task cards and ledger status. Do not append duplicate tasks for the same unresolved gap.
+If a completed task left a gap, cite that task and the present evidence that its acceptance check remains unsatisfied.
+
 ## Leftover spy tests
 
 After Micro drains, inspect this issue's tests in `in_scope_paths` before declaring convergence.
@@ -77,8 +90,8 @@ Check `spy` tags and internal call assertions. `behavioral` / `ac` tags do not e
 Preserve public behavior tests and external-boundary mocks that isolate processes, networks, or agent calls.
 Do not classify a test as disposable solely because it uses a mock.
 
-Raise an `unrequested` finding for each leftover internal spy test.
-Set `source_ref` to its test path and qualified test name, including the class when present.
+Raise an `unrequested` finding for leftover internal spy tests, grouping related cleanup as described above.
+Set `source_ref` to the test path and qualified name, including the class; list additional tests in the summary.
 Request review and removal, or replacement with a public behavior test when it protects a required contract.
 Include the relevant plan or task reference in the summary and require the affected tests to pass.
 Do not report CONVERGED while leftover spy tests remain.
@@ -110,13 +123,30 @@ On a clean run:
 deviate converge post '{"findings":[]}'
 ```
 
+## Follow-ups and artifact reminder
+
+Report incidental out-of-scope observations separately as non-blocking follow-ups.
+Suggest a new issue when work introduces a new acceptance outcome or independently deliverable behavior outside this issue's specification.
+If an existing issue owns the work, recommend that issue instead; do not import its tasks here.
+If ownership or required scope is unclear, ask the operator before appending tasks or declaring convergence.
+Do not create a new issue automatically. Include evidence, the scope reason, and a proposed acceptance check in the suggestion.
+Epic closeout is a separate review after constituent issues complete; do not assess epic-wide completeness in this issue's Converge.
+
+After a clean assessment, emit this non-blocking reminder with the resolved issue artifact paths:
+- Before MR, review retention of this issue's `plan.md`, `tasks.md`, and `tasks.jsonl` after final approval.
+- Keep these artifacts during Converge and Micro. Current policy protects them; this reminder does not authorize deletion.
+- Never delete or rewrite the append-only ledger. Any retention change requires explicit governance approval.
+
+Do not include follow-ups or reminders in the `findings` payload. They do not prevent CONVERGED.
+Do not append artifact-deletion tasks or remove artifacts.
+
 ## Steps
 
 1. Run `deviate converge pre`. Stop on `CONVERGE_NOT_READY` or a missing-artifact message.
 2. Read only the contract paths.
 3. Check leftover spy tests. Only when none remain and the brief, AC-PLAN, tasks, and constitution MUST are satisfied, submit empty findings and report CONVERGED.
 4. Otherwise emit findings (CRITICAL first) and run `deviate converge post '<json>'`.
-5. Do not start walkthrough, review, or `/deviate-pr`. If tasks were appended, Micro runs next.
+5. Report follow-ups separately. When clean, emit the artifact reminder. Do not start walkthrough, review, or `/deviate-pr`. If tasks were appended, Micro runs next.
 
 </system_instructions>
 
