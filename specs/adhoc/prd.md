@@ -868,3 +868,18 @@
 - **Acceptance Outline**:
   1. AC-ADHOC-059-01 / AO-059-01: A missing `red_commit_sha` on `revert_green` returns a distinct harness failure containing `head_sha` and `recovery_ref` when available.
   2. AC-ADHOC-059-02 / AO-059-02: The runner never falls back to `HEAD~1`, silently retries, or discards rollback evidence; the skill reports `DEVIATDD_BUG` and recommends `/deviate-green` after evidence preservation.
+
+## FR-ADHOC-060: Bound TRAIN retries by progress and return repeated blockers to the operator
+- **Description**: Allow five task-wide candidate attempts, including the initial attempt, while feedback guides corrections. Return control to the operator when a blocking finding repeats without material progress or the budget ends.
+- **Preconditions**: An active micro task has an authoritative acceptance contract and persisted retry state.
+- **Inputs/Outputs**: Inputs: candidate attempt, current JUDGE findings, prior findings, and task session. Output: completion, bounded corrective retry, or a durable operator stop with evidence.
+- **Source**: `src/deviate/cli/micro/surface.py` contains `_MAX_GREEN_ATTEMPTS = 3` and `_MAX_RED_ATTEMPTS = 3`. Proposed policy: `specs/adhoc/issues/061-progress-aware-judge-retries.md`, `The Problem Contract`.
+- **User Stories**:
+  1. US-061-01: As an operator, I want useful corrections to continue through five attempts so that actionable feedback can resolve the task.
+  2. US-061-02: As an operator, I want repeated blockers to return control early so that I can resolve stalled corrections.
+- **Acceptance Outline**:
+  1. AC-ADHOC-060-01 / AO-061-01: A task with evidence-backed progress completes on attempt four or five within one task-wide budget.
+  2. AC-ADHOC-060-02 / AO-061-02: An unchanged blocking defect repeated after one corrective attempt returns control before another candidate starts.
+  3. AC-ADHOC-060-03 / AO-061-03: Partial progress permits a bounded retry; recurrence of a resolved defect returns control.
+  4. AC-ADHOC-060-04 / AO-061-04: Reload and RED restart preserve the task budget and finding history; operator stops remain durable.
+  5. AC-ADHOC-060-05 / AO-061-05: Passing verdicts, advisory notes, manifest repair, and valid RED boundaries retain their distinct contracts.
