@@ -1547,7 +1547,12 @@ def _build_auto_prompt(
     task_id = task.get("id", "")
     source_file = _resolve_issue_source_file(root, issue_id) if issue_id else None
 
-    spec_content = _resolve_spec_md(root, task)
+    try:
+        spec_content = _resolve_spec_md(
+            root, task, task_scoped=phase in {"red", "green"}
+        )
+    except KernelError as exc:
+        raise PhaseFailedError(f"{exc.token}: {exc.detail}") from exc
 
     feature_slug = ""
     issue_slug = ""
@@ -1885,7 +1890,7 @@ def _run_red_phase(
         if exc.token != "TASK_NOT_FOUND":
             _restore_auto_session(session_path, _auto_session_snapshot)
             raise PhaseFailedError(
-                f"RED phase contract rejected for {tid}: {exc.detail}"
+                f"RED phase contract rejected for {tid}: {exc.token}: {exc.detail}"
             ) from exc
     session.red_commit_sha = ""
     session.save(session_path)
@@ -2438,26 +2443,45 @@ def _run_green_phase(
     return session
 
 
-def _resolve_spec_md(root: Path, task: dict) -> str:
+def _resolve_spec_md(root: Path, task: dict, *, task_scoped: bool = False) -> str:
     """Combine macro intent with the authoritative meso acceptance contract."""
+    from deviate.core.acceptance_context import scope_acceptance_context
+
+    tokens = (
+        resolve_task_ac_tokens(task, card_text=_task_card_text(root, task))
+        if task_scoped
+        else []
+    )
     issue_id = task.get("issue_id", "")
-    if not issue_id:
-        return ""
-    source_file = _resolve_issue_source_file(root, issue_id)
+    source_file = _resolve_issue_source_file(root, issue_id) if issue_id else None
     if not source_file:
+        if tokens:
+            raise KernelError("TASK_ACCEPTANCE_UNRESOLVED", ", ".join(tokens))
         return ""
     issue_path = root / source_file
-    if not issue_path.exists():
-        return ""
     plan_path = resolve_issue_artifact_path(root, source_file, "plan.md")
-    if not plan_path.is_file():
-        return issue_path.read_text(encoding="utf-8")
+    issue = issue_path.read_text(encoding="utf-8") if issue_path.is_file() else ""
+    plan = plan_path.read_text(encoding="utf-8") if plan_path.is_file() else ""
+    if tokens:
+        if not issue.strip():
+            raise KernelError(
+                "TASK_ACCEPTANCE_UNRESOLVED",
+                f"{', '.join(tokens)}: missing issue content at {source_file}",
+            )
+        try:
+            issue, plan = scope_acceptance_context(issue, plan, tokens)
+        except ValueError as exc:
+            raise KernelError("TASK_ACCEPTANCE_UNRESOLVED", str(exc)) from exc
+    if not issue:
+        return ""
+    if not plan:
+        return issue
     return (
         "<macro_issue_intent>\n"
-        f"{issue_path.read_text(encoding='utf-8')}\n"
+        f"{issue}\n"
         "</macro_issue_intent>\n\n"
         '<authoritative_acceptance_contract source="plan.md">\n'
-        f"{plan_path.read_text(encoding='utf-8')}\n"
+        f"{plan}\n"
         "</authoritative_acceptance_contract>"
     )
 
@@ -7989,6 +8013,7 @@ def _red_pre_kernel(
             "lint_command": "mise run lint",
             "spec_dir": str(ledger_path.parent),
             "task_entry": _task_card_text(root, task_data),
+            "spec_content": _resolve_spec_md(root, task_data, task_scoped=True),
         }
         _attach_mise_pre(root, contract, task_data)
     except typer.Exit as exc:
@@ -8331,6 +8356,7 @@ def _green_pre_kernel(
     contract: dict[str, object] = {
         "task_id": contract_task_id,
         "task_entry": task_entry.strip(),
+        "spec_content": _resolve_spec_md(root, task_data, task_scoped=True),
         "test_file": str(test_files[0]) if test_files else "",
         "implementation_targets": [str(f) for f in src_files],
         **_pre_layer_contract(root, task_data),

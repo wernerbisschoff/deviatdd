@@ -60,7 +60,7 @@ task will fail permanently.**
 </data_model_content>
 
 <traceability_and_compliance_mandates>
-1. **Contract Validation & Upstream Ingestion**: Extract the target `{TASK_ID}`, functional requirements (`FR-[ID]`), and acceptance criteria (`AC-[ID]`) from the preceding RED phase handover manifest context block. Validate these structural goals directly against `<spec_content>` and `<data_model_content>` above.
+1. **Contract Validation & Upstream Ingestion**: Read the runner-supplied `AC-PLAN-NNN` scenarios in `<spec_content>`'s `<authoritative_acceptance_contract source="plan.md">`, not just the RED handover. The runner selects assigned ACs and linked AO entries for `{TASK_ID}`. Read their Given/When/Then before implementation. Macro issue text supplies intent, not replacement acceptance criteria. Check `<data_model_content>` for applicable constraints. Tasks without AC references retain full context; do not treat every scenario as assigned.
 2. **Minimal Behavioral Implementation**: Before adding production code, apply the Ponytail construction ladder. Stop at the first rung that satisfies the failing observable:
    1. Does the required behavior already exist? Add no code (YAGNI) and verify it.
    2. Does existing code already solve it? Reuse it.
@@ -81,7 +81,7 @@ task will fail permanently.**
 <step id="context_loading">
 1. Extract the target `{TASK_ID}` and test file path from the orchestrator-provided context or RED handover manifest
 2. Read the target test file to isolate the exact assertion expectations
-3. Validate against `<spec_content>` and `<data_model_content>` above
+3. Map each assigned AC's Given/When/Then to the RED assertions and required production behavior before implementation. Tests passing alone do not prove AC compliance. Do not add unassigned ACs.
 </step>
 
 <step id="feedback_ingestion">
@@ -91,7 +91,7 @@ task will fail permanently.**
 </step>
 
 <step id="implementation">
-1. Implement the minimal codebase changes necessary to resolve the failing assertions
+1. Implement the minimum production changes that satisfy the assigned ACs and their RED assertions. Preserve required outputs, side effects, and error behavior.
 2. Write ONLY production code — leave all `tests/` files untouched. New git-interacting core functions MUST accept an optional `repo_path: Path | None = None` parameter defaulting to `Path.cwd()` so tests can pass an isolated repo.
 3. Add only the production code required — no speculative features, and no file or dependency the task did not name
 4. {doctor_preflight}Run the same `test_command` RED used — do not pick a different suite.
@@ -109,6 +109,7 @@ Do not write or edit tests. Do not create files under {test_write_dir} or any ot
    {lint_command}
    ```
    If lint fails, fix issues and re-run both test and lint until both pass.
+6. Before handover, check each assigned AC against the implementation and RED assertions. Report missing or contradictory test coverage through `failure_kind: test_defect`, citing the AC; never edit tests.
 </step>
 
 <step id="handover_emission">

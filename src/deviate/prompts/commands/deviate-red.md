@@ -21,6 +21,8 @@ Manual mode: run the scripts yourself.
    `tasks.md` card verbatim, including all complete `**Judge Feedback**` rounds.
    Apply these rounds using the core body's `<train_feedback>` rules.
 There is no separate feedback injection in manual mode.
+   Read `spec_content` as the core body's acceptance context. It contains assigned plan ACs and linked issue AO entries.
+   Plan scenarios define required behavior; AO entries supply intent. Do not fetch sibling criteria.
 3. Execute the RED (test-writing) work described in the core body (`auto/red.md`).
 4. Run `deviate red post --task-id {TASK_ID}` after the tests are verified
    failing. The command stages the test files, verifies them failing, updates

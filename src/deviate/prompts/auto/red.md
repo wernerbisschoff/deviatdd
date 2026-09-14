@@ -109,8 +109,8 @@ task_id: "TASK-105"
 1. Extract the target `{TASK_ID}` from the orchestrator-provided context
 2. Resolve absolute paths for the feature workspace: `specs/{FEATURE_SLUG}/`
 3. Read the active task description from `<task_content>` above
-4. Inspect `<spec_content>` above for data definitions, schemas, and API constraints
-5. **AC-to-test matrix**: before writing tests, map each assigned `AC-PLAN-NNN` to its failing observable (Given / When / Then / Test). One row per assigned criterion.
+4. Read the runner-supplied `AC-PLAN-NNN` scenarios in `<spec_content>`'s `<authoritative_acceptance_contract source="plan.md">` before writing tests. The runner selects assigned ACs and linked AO entries for `{TASK_ID}`. Macro issue text supplies intent, not replacement acceptance criteria. Tasks without AC references retain full context; do not treat every scenario as assigned.
+5. **AC-to-test matrix**: map each assigned scenario's Given, When, and Then to concrete test setup, execution, and assertions. Preserve required outputs, side effects, and error behavior. Check every assigned scenario before handover; do not add unassigned ACs.
 </step>
 
 <step id="feedback_ingestion">

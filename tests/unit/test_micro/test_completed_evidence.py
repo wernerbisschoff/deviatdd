@@ -312,6 +312,8 @@ def _write_leftover_ac_card(repo: Path) -> None:
         "  - **Rationale**: leftover plan tokens AC-PLAN-004 and AC-PLAN-001\n",
         encoding="utf-8",
     )
+    with (tasks_md.parent / "plan.md").open("a", encoding="utf-8") as plan:
+        plan.write("\n**Scenario AC-PLAN-002: Already-exists slice**\n")
 
 
 def _passing_proc() -> subprocess.CompletedProcess[str]:

@@ -557,7 +557,14 @@ def seed_cycle_repo(
         cards.append("  - **Verification**: pytest\n")
     (workspace / "tasks.md").write_text("".join(cards), encoding="utf-8")
     (workspace / "plan.md").write_text(
-        "## Acceptance Contract\n\nNo extra plan tokens beyond the task cards.\n",
+        "## Acceptance Contract\n\n"
+        + "\n".join(
+            f"**Scenario {ac}: Scripted cycle behavior**\n"
+            "- **Given**: the seeded repository\n"
+            "- **When**: the task runs\n"
+            "- **Then**: the feature returns the task ID\n"
+            for ac in dict.fromkeys(spec.ac for spec in specs if spec.ac)
+        ),
         encoding="utf-8",
     )
     (root / "specs" / "issues.jsonl").write_text(

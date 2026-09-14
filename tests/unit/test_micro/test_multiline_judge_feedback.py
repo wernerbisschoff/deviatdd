@@ -71,6 +71,7 @@ def test_feedback_round_trips_nested_markdown_and_prompt_delimiters(
     )
     tasks_md.write_text(card + sibling)
     monkeypatch.setattr("deviate.cli.micro._resolve_tasks_md", lambda *_: tasks_md)
+    monkeypatch.setattr("deviate.cli.micro._resolve_spec_md", lambda *_, **__: "")
 
     _append_judge_feedback(tasks_md, task["id"], feedback)
     _append_judge_feedback(tasks_md, task["id"], "Keep the RED tests unchanged.")

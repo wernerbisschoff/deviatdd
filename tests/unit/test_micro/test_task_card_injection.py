@@ -6,6 +6,7 @@ import json
 from contextlib import chdir
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from deviate.cli import cli
@@ -184,3 +185,165 @@ class TestPreCliResolvesIntendedTask:
             f"got {rec.get('id')!r}"
         )
         assert rec.get("id") != _TSK_B
+
+
+def _seed_acceptance_workspace(root: Path) -> tuple[dict, Path]:
+    task, ledger = _seed_two_task_workspace(root)
+    (root / _SOURCE_FILE).write_text(
+        "# Issue scope\nKeep public behavior intact.\n\n"
+        "## Acceptance Outline\n"
+        "- **AO-001**: Selected outline.\n  - Boundary: preserve empty input.\n"
+        "- **AO-150-02**: Shared outline.\n"
+        "- **AO-003**: UNASSIGNED_OUTLINE\n\n"
+        "## Scope Boundaries\nDo not change the API.\n",
+        encoding="utf-8",
+    )
+    (ledger.parent / "plan.md").write_text(
+        "# Plan\n## Acceptance Contract\n"
+        "**Scenario AC-PLAN-001: Selected scenario**\n"
+        "- **Source Outline**: `AO-001`, `AO-150-02`\n"
+        "- **Given**: an empty input\n- **When**: the API runs\n"
+        "- **Then**: preserve empty output\n"
+        "- **Verification Mode**: automated\n\n"
+        "**Scenario AC-PLAN-002: UNASSIGNED_SCENARIO**\n"
+        "- **Source Outline**: `AO-003`\n\n"
+        "## Implementation Approach\nReuse the existing API.\n",
+        encoding="utf-8",
+    )
+    return task, ledger
+
+
+@pytest.mark.behavioral
+@pytest.mark.parametrize("phase", ["red", "green"])
+def test_pre_and_auto_inject_matching_task_acceptance(
+    tmp_git_repo: Path, phase: str
+) -> None:
+    task, ledger = _seed_acceptance_workspace(tmp_git_repo)
+    card = ledger.parent / "tasks.md"
+    card.write_text(
+        card.read_text().replace(
+            _TSK_A_BODY,
+            _TSK_A_BODY + "\n  - **Judge Feedback**: See AC-PLAN-002",
+        ),
+        encoding="utf-8",
+    )
+    with chdir(tmp_git_repo):
+        result = runner.invoke(cli, [phase, "pre", "--task", _TSK_A])
+    assert result.exit_code == 0, result.output
+    spec = json.loads(result.output)["spec_content"]
+    prompt = _build_auto_prompt(phase, task, tmp_git_repo)
+    assert spec in prompt
+    for text in (
+        "**Scenario AC-PLAN-001: Selected scenario**",
+        "**Then**: preserve empty output",
+        "**AO-001**: Selected outline.",
+        "Boundary: preserve empty input.",
+        "**AO-150-02**: Shared outline.",
+        "Keep public behavior intact.",
+        "Reuse the existing API.",
+        "Do not change the API.",
+    ):
+        assert text in spec
+    assert "UNASSIGNED_SCENARIO" not in spec
+    assert "UNASSIGNED_OUTLINE" not in spec
+    assert "UNASSIGNED_SCENARIO" not in prompt
+    assert "UNASSIGNED_OUTLINE" not in prompt
+    judge = _build_auto_prompt("judge", task, tmp_git_repo)
+    assert "UNASSIGNED_SCENARIO" in judge
+
+
+@pytest.mark.behavioral
+@pytest.mark.parametrize("phase", ["red", "green"])
+@pytest.mark.parametrize("missing", ["AC-PLAN-001", "AO-150-02"])
+def test_pre_and_auto_reject_unresolved_acceptance(
+    tmp_git_repo: Path, phase: str, missing: str
+) -> None:
+    from deviate.cli.micro import PhaseFailedError
+
+    task, ledger = _seed_acceptance_workspace(tmp_git_repo)
+    path = (
+        ledger.parent / "plan.md"
+        if missing.startswith("AC-")
+        else tmp_git_repo / _SOURCE_FILE
+    )
+    path.write_text(path.read_text().replace(missing, "REMOVED"), encoding="utf-8")
+    with chdir(tmp_git_repo):
+        result = runner.invoke(cli, [phase, "pre", "--task", _TSK_A])
+    assert result.exit_code == 1
+    assert "TASK_ACCEPTANCE_UNRESOLVED" in result.output
+    assert missing in result.output
+    with pytest.raises(
+        PhaseFailedError, match=f"TASK_ACCEPTANCE_UNRESOLVED.*{missing}"
+    ):
+        _build_auto_prompt(phase, task, tmp_git_repo)
+
+
+@pytest.mark.behavioral
+def test_acceptance_selection_uses_ledger_ids_and_deduplicates_outlines(
+    tmp_path: Path,
+) -> None:
+    from deviate.cli.micro import _resolve_spec_md
+
+    task, ledger = _seed_acceptance_workspace(tmp_path)
+    plan_path = ledger.parent / "plan.md"
+    plan_path.write_text(
+        plan_path.read_text().replace("`AO-003`", "`AO-001`"), encoding="utf-8"
+    )
+    task["acceptance_criteria"] = [
+        {"criterion_id": "AC-PLAN-002"},
+        {"criterion_id": "AC-PLAN-001"},
+    ]
+    spec = _resolve_spec_md(tmp_path, task, task_scoped=True)
+    assert "**Scenario AC-PLAN-002" in spec
+    assert "**Scenario AC-PLAN-001" in spec
+    assert spec.count("**AO-001**: Selected outline.") == 1
+    assert "UNASSIGNED_OUTLINE" not in spec
+    task["acceptance_criteria"] = [{"criterion_id": "AC-PLAN-002"}]
+    spec = _resolve_spec_md(tmp_path, task, task_scoped=True)
+    assert "**Scenario AC-PLAN-001" not in spec
+
+
+@pytest.mark.behavioral
+@pytest.mark.parametrize("token", ["AC-PLAN-001", "AO-001"])
+def test_acceptance_selection_rejects_duplicate_definitions(
+    tmp_path: Path, token: str
+) -> None:
+    from deviate.cli.micro import KernelError, _resolve_spec_md
+
+    task, ledger = _seed_acceptance_workspace(tmp_path)
+    path = (
+        ledger.parent / "plan.md"
+        if token.startswith("AC-")
+        else tmp_path / _SOURCE_FILE
+    )
+    definition = (
+        "**Scenario AC-PLAN-001: Duplicate**"
+        if token.startswith("AC-")
+        else "- **AO-001**: Duplicate"
+    )
+    header = (
+        "## Acceptance Contract" if token.startswith("AC-") else "## Acceptance Outline"
+    )
+    path.write_text(
+        path.read_text().replace(header, header + "\n" + definition),
+        encoding="utf-8",
+    )
+    with pytest.raises(KernelError) as caught:
+        _resolve_spec_md(tmp_path, task, task_scoped=True)
+    assert caught.value.token == "TASK_ACCEPTANCE_UNRESOLVED"
+    assert token in caught.value.detail
+
+
+@pytest.mark.behavioral
+def test_acceptance_selection_preserves_legacy_tasks_without_refs(
+    tmp_path: Path,
+) -> None:
+    from deviate.cli.micro import _resolve_spec_md
+
+    task, ledger = _seed_acceptance_workspace(tmp_path)
+    (ledger.parent / "tasks.md").write_text(
+        f"- {_TSK_A}: Legacy task\n", encoding="utf-8"
+    )
+    assert _resolve_spec_md(tmp_path, task, task_scoped=True) == _resolve_spec_md(
+        tmp_path, task
+    )

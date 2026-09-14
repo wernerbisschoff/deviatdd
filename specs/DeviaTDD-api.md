@@ -759,20 +759,33 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 **Auto this-task card (GH-150):** Auto `_build_auto_prompt` for `red`, `green`,
 `judge`, and `refactor` injects **this task's** markdown card from `tasks.md`
 as `{task_content}` — the `TSK-NNN-NN` bullet and its body until the next
-task bullet or heading. Sibling cards are never included. Plan, issue spec,
-data-model, PRD, constitution, and the JUDGE `<diff>` stay as they are
-(those are not other tasks). `{task_content}` is the card, not the ledger
-JSON row. JUDGE still receives the GH-118 Judge-Feedback-stripped card so
+task bullet or heading. Sibling cards are never included.
+RED/GREEN narrow plan acceptance scenarios and issue outline entries to this task; other document sections retain their scope context.
+Data-model, PRD, constitution, and JUDGE context remain unchanged.
+`{task_content}` is the card, not the ledger JSON row. JUDGE receives the GH-118 Judge-Feedback-stripped card so
 prior-round `**Judge Feedback**` prose cannot bias AC-token matching; RED,
 GREEN, and REFACTOR receive the raw card (including Judge Feedback history).
 When the runner passes `train_feedback=...`, that string is present in the
 assembled prompt (`{train_feedback}` / the GREEN-style `<train_feedback>`
 block). Agents must not open `tasks.md` for this-task fields (Flow
 References, AC-PLAN ids, Judge Feedback); they use the injected card.
+RED and GREEN read assigned plan AC Given/When/Then and Source Outline AO lineage before work.
+RED maps these scenarios to assertions; GREEN checks assertions and production behavior against the same scenarios before handover.
+GREEN reports missing or contradictory coverage as `test_defect` without editing tests. Unassigned ACs remain outside scope.
 Manual `deviate red|green|refactor pre` resolve the queued/pinned task via
 `_resolve_task_context` (correct `task_id`, not a sibling). `deviate judge
 pre` remains a protected-module scan and does not emit `task_id`; JUDGE
 uses the same `_resolve_task_context` selector as the other micro pres.
+
+**Task acceptance injection:** Both `red pre` and `green pre` emit `spec_content`.
+Auto RED/GREEN use the same `_resolve_spec_md(..., task_scoped=True)` resolver on every phase entry, including retries.
+`resolve_task_ac_tokens` selects ledger criterion IDs first, then the task card; feedback never assigns additional criteria.
+The resolver preserves exact selected scenario text, including Given/When/Then, verification mode, and Source Outline references.
+It includes linked AO entries and their nested details, including legacy IDs such as `AO-053-01`.
+Shared AO entries appear once. Other plan and issue sections remain available as supporting context.
+Missing or duplicate referenced AC/AO definitions stop the phase with `TASK_ACCEPTANCE_UNRESOLVED` and the affected IDs.
+Missing issue or plan content also stops referenced tasks. No agent starts with a partial acceptance contract.
+Tasks without assigned AC references retain the previous full-context behavior. Legacy scenarios without AO links do not invent outlines.
 
 #### `deviate red pre [--task <id>]`
 
@@ -781,7 +794,7 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   `task_id`, `test_strategy` (`unit` | `integration` | `e2e`), `test_write_dir` (init-convention
   directory for that layer), `test_command` (this layer's named mise task only — `mise unit` /
   `mise integration` / `mise e2e`; never inject `mise integ` when `mise integration` exists),
-  `lint_command`, `spec_dir`, and `task_entry` (this task's
+  `lint_command`, `spec_dir`, `spec_content` (task acceptance context), and `task_entry` (this task's
   `tasks.md` card via `_task_card_text`, mirroring `green_pre` — it carries persisted
   `**Judge Feedback**` bullets so the manual RED agent receives correction history that
   manual mode cannot inject as `<train_feedback>`). The runner determines the layer and
@@ -874,7 +887,7 @@ uses the same `_resolve_task_context` selector as the other micro pres.
 #### `deviate green pre [--task <id>]`
 
 * **Source:** `src/deviate/cli/micro.py`
-* **Description:** Resolves task context, emits JSON contract with `test_file`,
+* **Description:** Resolves task context, emits JSON contract with `task_entry`, `spec_content`, `test_file`,
   `implementation_targets` (all `src/**/*.py` files), and the same layer contract as
   `red pre` (`test_strategy`, `test_write_dir`, `test_command` — this layer's named
   mise task only). GREEN must not write tests. Its canonical prompt applies the

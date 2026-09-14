@@ -304,6 +304,16 @@ to invoke, but model selection is delegated to the calling environment.
 | **`direct`** | Bypasses RED phase. Used for boilerplate, dependency config, or asset syncing. No test generation. | GREEN → JUDGE only | Scoped tightly to targeted files (e.g., `pyproject.toml`, config assets). |
 | **`e2e`** | End-to-end integration validation. Orchestrates external runtime environments, databases, or client-server loops. Verified via exit codes. | GREEN → JUDGE only | Production lines frozen; no business logic modifications allowed. System-level behavioral evaluation only. |
 
+RED and GREEN use the assigned plan AC Given/When/Then and Source Outline AO lineage, matching JUDGE's acceptance authority.
+RED maps scenarios to assertions. GREEN checks production behavior and assertion coverage before handover, without adding unassigned ACs.
+Missing or contradictory coverage uses GREEN's existing `test_defect` route; phase gates and manifest schemas remain unchanged.
+Both pre-contract kernels emit `spec_content`; auto RED/GREEN resolve the same content before each invocation, including retries.
+`surface.py::_resolve_spec_md` reuses `resolve_task_ac_tokens` and `core/acceptance_context.py::scope_acceptance_context`.
+The selector retains assigned scenarios and linked AO entries verbatim while preserving other plan and issue sections.
+Ledger criterion IDs take precedence over card references. Feedback does not assign criteria; shared outlines appear once.
+Unresolved or duplicate referenced definitions raise `TASK_ACCEPTANCE_UNRESOLVED` before agent invocation.
+Tasks without AC references retain full context. JUDGE and REFACTOR context selection remains unchanged.
+
 * **GREEN (The Execution):**
     * **Action:** The agent iterates on production code to pass the test.
     * **GREEN-entry invariant:** `_run_green_phase` (`src/deviate/cli/micro.py`) always persists a recoverable `session.red_commit_sha` then invokes the GREEN agent only when that SHA is a standing RED-phase failing-test boundary. The gate runs even when `current_phase` is already GREEN. Empty SHA and a `docs(...): add judge feedback` SHA that does not rest on a RED ancestor raise `PhaseFailedError` carrying `GREEN_ENTRY_REFUSED`. After JUDGE `revert_red` / cycle `no_failing_test_adjudicated`, `_run_tdd_cycle` re-dispatches RED or raises `TRAIN_EXHAUSTED` / `PhaseFailedError`. It never enters GREEN on that path. C1 (`deviate` CLI) owns this gate. `skip_refactor` / bare `COMPLIANCE_PASS` still complete without GREEN. `_coerce_judge_action` and the 3/3 caps from ISS-ADH-017 stay unchanged.
