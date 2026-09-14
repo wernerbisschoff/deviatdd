@@ -422,6 +422,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   * **Scope bounds:** No issue should require <1 task or >10 tasks
   * **Testability:** Each issue must have clear acceptance criteria
   * **Enforcement:** The shard prompt owns all slicing rules. Pass 1 slices by observable behavior, not by FR. Pass 1.5 confirms independent verticals without a count cap. Pass 3.5 merges only invalid horizontal splits or artifact-dependent slices. The PRD prompt owns FR/AC/AO traceability and does not prescribe topology.
+  * **Epic verification:** Reuse an existing command that covers the epic's verification needs. Otherwise, scope `mise run verify:<epic_slug>` creation into the earliest relevant behavior issue, with real FR/AO checks. Do not create an empty passing placeholder or a setup-only issue. Dependent issues declare `blocked_by`. This prompt rule does not add automatic runner execution.
 
 ---
 

@@ -46,6 +46,7 @@ Execute Internal ICoT (internal only — do not emit reasoning passes; emit only
 - **Pass 3 (Horizontal Slice Audit)**: For every candidate slice, enumerate the application layers required by the behavior. Flag HORIZONTAL_SLICE_DETECTED only for a pure horizontal layer split that is not itself the observable behavior (persistence-only behavior slices stay valid).
 - **Pass 3.5 (Merge Pass)**: For every pair of slices A, B: if B's Demo Path references an artifact only created by A's workstation cluster, OR if B is flagged HORIZONTAL_SLICE_DETECTED (pure horizontal split), merge A and B. Re-run until no merge candidates remain.
 - **Pass 4 (Verification Mapping)**: Pair every `AO-NNN` token with a copy-pasteable verification command per issue_generation (one command per AO).
+- **Epic verification**: Reuse an existing command when it covers the epic's verification needs. Otherwise, include `mise run verify:<epic_slug>` creation in the earliest relevant behavior issue's Scope Boundaries. Require real checks for that issue's FR/AO outcomes; never an empty passing placeholder or a separate setup-only issue. Set `blocked_by` on issues that require the new command.
 - **Pass 5 (Consumer Implementation Audit)**: Reject every candidate whose deliverable is DeviaTDD setup, agent skills, catalog authoring, release scaffolding, or workflow-ledger maintenance. Halt immediately with `META_WORK_NOT_ALLOWED`; do not emit a mixed meta/application shard set.
 </step>
 

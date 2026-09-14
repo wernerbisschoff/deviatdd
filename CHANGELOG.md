@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- SHARD reuses epic verification commands or scopes their creation into the earliest relevant behavior issue. New commands require real checks; setup-only issues and empty passing placeholders remain forbidden.
+
 - **Converge now requires leftover spy findings after Micro drains.** The assessor checks in-scope tests, including untagged internal probes. Remaining spies produce cleanup tasks instead of CONVERGED. Public behavior tests and external-boundary mocks remain valid. Prune stays manual; Converge never deletes tests directly.
 - **Converge keeps corrective tasks minimal and issue-scoped.** Findings require owning spec references and verification checks. Related fixes share tasks; unrelated work becomes non-blocking follow-up suggestions. Clean assessments remind operators to review issue artifact retention before MR without authorizing deletion.
 
