@@ -43,6 +43,12 @@
     - **Edge Cases**: Keep relative diff paths and preserve existing pass, retry, and required-preservation outcomes.
   - **Dependency**: TSK-002-01
 
+  - **Judge Feedback**: The next RED attempt must:
+    - Requirement: AC-PLAN-001 requires JUDGE to receive the active contract and current RED-to-HEAD plus dirty working-tree diff.
+    - Evidence: test_judge_agent_receives_active_contract_and_current_diff passes because surface.py includes the literal text "feat.py", without proving that feat.py exists in the injected diff.
+    - Correction: Rewrite tests/unit/test_micro/test_judge.py to create a real feat.py change in tmp_git_repo and assert its diff content appears inside the captured <diff> block.
+    - Verification: Run mise unit; expect the focused test to fail when diff injection is absent and pass only when the actual file change is injected.
+    - Boundary: Change RED tests only. Preserve the active contract assertion, relative paths, existing pass and retry routing, and contradiction handling.
 ## Phase 3: Regression verification
 **Goal**: Run the application unit suite after JUDGE changes.
 
