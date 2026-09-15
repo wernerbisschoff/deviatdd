@@ -219,6 +219,10 @@ def _has_preserve_tests(text: str) -> bool:
     return bool(_PRESERVE_RE.search(text) and _TEST_FIXTURE_RE.search(text))
 
 
+def _has_preserve_identity(text: str) -> bool:
+    return bool(_PRESERVE_RE.search(text) and _identity_tokens(text))
+
+
 def _polar_flip(prior: str, current: str) -> JudgeContradiction | None:
     prior_focus = requirement_focus(prior)
     current_focus = requirement_focus(current)
@@ -226,10 +230,10 @@ def _polar_flip(prior: str, current: str) -> JudgeContradiction | None:
     current_strict = _has_strict_match(current_focus)
     prior_preserve = _has_preserve_mismatch(prior_focus) or (
         _has_preserve_tests(prior_focus) and bool(_identity_tokens(prior_focus))
-    )
+    ) or _has_preserve_identity(prior_focus)
     current_preserve = _has_preserve_mismatch(current_focus) or (
         _has_preserve_tests(current_focus) and bool(_identity_tokens(current_focus))
-    )
+    ) or _has_preserve_identity(current_focus)
     flipped = (prior_strict and current_preserve) or (current_strict and prior_preserve)
     if not flipped:
         return None
