@@ -2024,6 +2024,14 @@ All state transitions are append-only. No existing line is ever modified or over
 | `timestamp` | `datetime` (auto-set on each transition via `force_transition_to`/`transition_to`) | Wall-clock record of last phase change |
 
 
+#### JUDGE existing-behavior review
+
+Automatic and manual JUDGE prompts inspect current task-scoped tests and implementation, including unchanged code.
+Existing behavior and valid regression tests count toward assigned acceptance criteria; neither requires duplication.
+Diffs identify phase changes and scope violations. They do not define all available behavior.
+Citations may use inspected current files. Renamed tests count only when their assertions exercise the assigned behavior.
+This prompt correction does not change verdict routing, test gates, or evidence storage.
+
 #### JUDGE rejection repair contract
 
 Rejection `train_feedback` remains a text field. Its prompt-defined repair contract contains five labeled bullets per confirmed defect:
