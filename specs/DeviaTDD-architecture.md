@@ -285,6 +285,11 @@ Manual phase execution is supported via individual `pre`/`post` subcommands:
 `deviate red pre/post`, `deviate green pre/post`, `deviate judge pre/post`, etc. These are used for interactive
 or agent-driven TDD where full automation is not desired. `deviate judge post [<manifest>] [--yes] [--revert]` reads the JUDGE handover and applies the same rollback / `tasks.md` feedback / session-ledger updates as `_run_judge_phase` (`_apply_judge_verdict`) only after the complete JUDGE manifest validates (YAML parse + `EvidenceItem` shape + `parse_errors`). A schema/parse failure is `JUDGE_MANIFEST_INVALID`: refuse, keep GREEN, do not reset. Auto `_run_judge_phase` retries JUDGE on the same GREEN tree (cap 3) before that code. On a valid `revert_green` / `revert_red` the command waits **after operator confirm**: print `head_sha` / `reset_to` / `recovery_ref`, leave the failing tree in place, TTY `typer.confirm` or non-TTY `JUDGE_REVERT_CONFIRM_REQUIRED`. `--yes` / `--revert` skip the prompt. Auto `_apply_judge_verdict(..., assume_yes=True)` still reverts immediately; `micro run` does not shell out to the new CLI. After revert, `git switch <recovery_ref>` inspects the discarded commit (`_preserve_agent_work`; no stash).
 
+Successful `_green_post_kernel` commits consume rejection state for manual and automatic callers.
+The kernel clears retry directives, failure classification, training feedback, and the matching pending feedback payload after committing.
+It reloads session state after the commit to preserve current anchors. Historical task feedback remains unchanged.
+Commit failure preserves recovery feedback. Micro then reviews successful manual GREEN without repeating the previous rejection.
+
 All `pre` subcommands accept `--json` (emit the phase contract as JSON to stdout) and
 `--quiet` (suppress rich console diagnostic output). These flags enable programmatic
 consumption by agent runtimes that parse JSON contracts rather than reading human-facing

@@ -115,3 +115,62 @@ def test_green_post_kernel_missing_task_raises(tmp_path: Path, monkeypatch):
     _seed(tmp_path, monkeypatch)
     with pytest.raises(KernelError, match="TASK_NOT_FOUND"):
         _green_post_kernel(tmp_path, "TSK-999-99", surface="manual")
+
+
+@pytest.mark.parametrize("commit_fails", [False, True])
+def test_manual_green_post_consumes_rejection_only_after_commit(
+    tmp_git_repo: Path, monkeypatch, commit_fails: bool
+):
+    from rich.console import Console
+
+    import deviate.cli.micro as micro
+    from deviate.state.config import SessionState
+
+    session, session_path, ledger = _seed(tmp_git_repo, monkeypatch)
+    session.train_feedback = "Correct the admission validation."
+    session.failure_kind = "test_defect"
+    session.judge_rejected = True
+    session.pending_judge_action = "revert_green"
+    session.red_commit_sha = "retained-red-boundary"
+    session.pending_judge_feedback = {
+        "task_id": "TSK-007-01",
+        "feedback": session.train_feedback,
+        "feedback_source": "train_feedback",
+        "judge_action": "revert_green",
+    }
+    session.save(session_path)
+
+    def commit(*args, **kwargs):
+        if commit_fails:
+            raise RuntimeError("commit failed")
+
+    monkeypatch.setattr(micro, "_commit_phase", commit)
+    if commit_fails:
+        with pytest.raises(RuntimeError, match="commit failed"):
+            micro._green_post_kernel(tmp_git_repo, "TSK-007-01")
+        restored = SessionState.load(session_path)
+        assert restored.train_feedback == session.train_feedback
+        assert restored.pending_judge_feedback == session.pending_judge_feedback
+        assert restored.pending_judge_action == "revert_green"
+        return
+
+    micro._green_post_kernel(tmp_git_repo, "TSK-007-01")
+    restored = SessionState.load(session_path)
+    assert restored.current_phase == "GREEN"
+    assert restored.train_feedback == ""
+    assert restored.failure_kind == ""
+    assert not restored.judge_rejected
+    assert restored.pending_judge_action == ""
+    assert restored.pending_judge_feedback is None
+    assert restored.red_commit_sha == "retained-red-boundary"
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("completed GREEN must not replay feedback or invoke an agent")
+
+    monkeypatch.setattr(micro, "_commit_judge_feedback_and_advance", unexpected)
+    monkeypatch.setattr(micro, "_invoke_agent", unexpected)
+    task = _ledger_lines(ledger)[-1]
+    restored = micro._resume_pending_judge_feedback(
+        tmp_git_repo, task, Console(), restored, session_path
+    )
+    micro._run_green_phase(task, ledger, restored, session_path, Console())

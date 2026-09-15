@@ -907,6 +907,9 @@ Tasks without assigned AC references retain the previous full-context behavior. 
   A RED warning advisory (`RedHandoffAdvisory`) does not block GREEN start.
   Appends GREEN transition to ledger, forces session to GREEN,
   commits with `feat({scope}): GREEN phase - implementation passes tests`.
+  After a successful commit, the shared kernel clears consumed rejection state and matching pending feedback.
+  It preserves the RED boundary and historical task feedback. A failed commit retains recovery feedback.
+  Resuming Micro reviews completed GREEN instead of replaying the old rejection or invoking GREEN again.
 
 #### `deviate judge pre`
 

@@ -8219,6 +8219,14 @@ def _green_post_kernel(
                 phase="green",
                 task_id=tid,
             )
+    session = SessionState.load(session_path)
+    if session.pending_judge_action or session.judge_rejected:
+        _clear_judge_retry_gate(session)
+    session.train_feedback = ""
+    session.failure_kind = ""
+    if (session.pending_judge_feedback or {}).get("task_id") == tid:
+        session.pending_judge_feedback = None
+    session.save(session_path)
     return KernelOutcome(token="GREEN_POST_OK")
 
 
