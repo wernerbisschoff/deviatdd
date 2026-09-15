@@ -2832,6 +2832,186 @@ class TestFindTaskRecord:
         )
 
 
+@pytest.mark.behavioral
+def test_canonical_task_state_keeps_retry_transition_for_each_issue(
+    tmp_path: Path,
+) -> None:
+    """AC-PLAN-001: ordered retries stay isolated by issue and task."""
+    from deviate.cli.micro import _collect_latest_task_records
+
+    ledgers = {
+        "010-001": [
+            {
+                "id": "TSK-001-01",
+                "issue_id": "010-001",
+                "description": "active",
+                "status": "RED",
+            },
+            {
+                "id": "TSK-001-01",
+                "issue_id": "010-001",
+                "description": "active",
+                "status": "GREEN",
+            },
+            {
+                "id": "TSK-001-01",
+                "issue_id": "010-001",
+                "description": "active",
+                "status": "RED",
+            },
+        ],
+        "010-002": [
+            {
+                "id": "TSK-001-01",
+                "issue_id": "010-002",
+                "description": "sibling",
+                "status": "COMPLETED",
+            }
+        ],
+    }
+    for issue_id, records in ledgers.items():
+        path = tmp_path / "specs" / issue_id / "tasks.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "".join(json.dumps(row) + "\n" for row in records), encoding="utf-8"
+        )
+
+    current = {
+        (record["issue_id"], record["id"]): record["status"]
+        for record, _ in _collect_latest_task_records(tmp_path)
+    }
+    assert current == {
+        ("010-001", "TSK-001-01"): "RED",
+        ("010-002", "TSK-001-01"): "COMPLETED",
+    }
+
+
+@pytest.mark.behavioral
+def test_task_transition_deduplication_is_issue_scoped(tmp_path: Path) -> None:
+    """AC-PLAN-001: same-status rows deduplicate without hiding sibling issues."""
+    ledger = tmp_path / "tasks.jsonl"
+    for issue_id in ("010-001", "010-002"):
+        record = TaskRecord(
+            id="TSK-001-01", issue_id=issue_id, description="task", status="RED"
+        )
+        assert append_task_transition(record, ledger) is True
+
+    rows = [json.loads(line) for line in ledger.read_text().splitlines()]
+    assert [(row["issue_id"], row["status"]) for row in rows] == [
+        ("010-001", "RED"),
+        ("010-002", "RED"),
+    ]
+
+
+@pytest.mark.behavioral
+def test_green_post_accepts_latest_red_after_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-PLAN-002: GREEN accepts the latest RED after a retry cycle."""
+    from deviate.cli.micro import _green_post_kernel
+
+    ledger = tmp_path / "specs" / "010-001" / "tasks.jsonl"
+    ledger.parent.mkdir(parents=True)
+    records = [
+        {
+            "id": "TSK-001-01",
+            "issue_id": "010-001",
+            "description": "task",
+            "status": status,
+        }
+        for status in ("RED", "GREEN", "RED")
+    ]
+    ledger.write_text(
+        "".join(json.dumps(row) + "\n" for row in records), encoding="utf-8"
+    )
+    (tmp_path / ".deviate").mkdir()
+    monkeypatch.setattr("deviate.cli.micro._commit_phase", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "deviate.cli.micro.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0),
+    )
+
+    assert _green_post_kernel(tmp_path, "TSK-001-01").token == "GREEN_POST_OK"
+
+
+@pytest.mark.behavioral
+@pytest.mark.parametrize("current_status", ["PENDING", "GREEN", "JUDGE", "COMPLETED"])
+def test_green_post_rejects_every_non_red_latest_state(
+    tmp_path: Path, current_status: str
+) -> None:
+    """AC-PLAN-003: the guard names the resolved non-RED state."""
+    from deviate.cli.micro import KernelError, _green_post_kernel
+
+    ledger = tmp_path / "specs" / "010-001" / "tasks.jsonl"
+    ledger.parent.mkdir(parents=True)
+    ledger.write_text(
+        json.dumps(
+            {
+                "id": "TSK-001-01",
+                "issue_id": "010-001",
+                "description": "task",
+                "status": current_status,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(KernelError) as raised:
+        _green_post_kernel(tmp_path, "TSK-001-01")
+
+    assert raised.value.token == "GREEN_GUARD_REJECTED"
+    assert raised.value.detail == f"expected RED, found {current_status}"
+
+
+@pytest.mark.behavioral
+def test_green_post_clears_matching_retry_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-PLAN-004: successful GREEN removes stale retry routing metadata."""
+    from deviate.cli.micro import _green_post_kernel
+
+    ledger = tmp_path / "specs" / "010-001" / "tasks.jsonl"
+    ledger.parent.mkdir(parents=True)
+    ledger.write_text(
+        json.dumps(
+            {
+                "id": "TSK-001-01",
+                "issue_id": "010-001",
+                "description": "task",
+                "status": "RED",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    session_path = tmp_path / ".deviate" / "session.json"
+    SessionState(
+        active_issue_id="010-001",
+        judge_rejected=True,
+        pending_judge_action="revert_green",
+        train_feedback="retry this task",
+        failure_kind="mechanical",
+        pending_judge_feedback={
+            "task_id": "TSK-001-01",
+            "feedback": "retry this task",
+        },
+    ).save(session_path)
+    monkeypatch.setattr("deviate.cli.micro._commit_phase", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "deviate.cli.micro.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0),
+    )
+
+    assert _green_post_kernel(tmp_path, "TSK-001-01").token == "GREEN_POST_OK"
+    cleaned = SessionState.load(session_path)
+    assert cleaned.judge_rejected is False
+    assert cleaned.pending_judge_action == ""
+    assert cleaned.train_feedback == ""
+    assert cleaned.failure_kind == ""
+    assert cleaned.pending_judge_feedback is None
+
+
 class TestFindTaskRecordIssueScopedPin:
     """AC-PLAN-003 / AC-PLAN-002 / AC-PLAN-005: known branch issue is a namespace."""
 

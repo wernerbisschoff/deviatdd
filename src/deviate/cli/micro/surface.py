@@ -1112,13 +1112,14 @@ def _resolve_md_issue_id(md_path: Path) -> str:
 def _git_branch(root: Path) -> str:
     """Return the current branch name, or "" when not a git repo."""
     try:
-        return subprocess.run(
+        result = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=root,
             capture_output=True,
             text=True,
             check=True,
-        ).stdout.strip()
+        )
+        return (result.stdout or "").strip()
     except (subprocess.CalledProcessError, OSError):
         return ""
 
@@ -8179,8 +8180,8 @@ def _green_post_kernel(
     tid = (task_id or "").strip()
     latest = _find_task_record(root, tid) if tid else None
     if latest is None and tid and ledger_hint is not None:
-        for rec in _read_ledger_records(ledger_hint):
-            if rec.get("id") == tid and rec.get("status") == "RED":
+        for rec in reversed(_read_ledger_records(ledger_hint)):
+            if rec.get("id") == tid:
                 latest = (rec, ledger_hint)
                 break
     if latest is None:

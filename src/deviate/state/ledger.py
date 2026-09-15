@@ -246,15 +246,16 @@ def _append_with_compound_key(
     ledger_path: Path,
     latest_only: bool = False,
 ) -> bool:
-    """Deduplicate against history, or the latest row for the first key field."""
+    """Deduplicate against history or the latest row within a compound scope."""
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     record_data = json.loads(record_json)
+    scope_fields = key_fields[:-1] if latest_only else []
     with ledger_path.open("a+", encoding="utf-8") as f:
         if HAS_FCNTL:
             fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         try:
             f.seek(0)
-            latest_matches = False
+            latest_row_matches = False
             for line in f:
                 line = line.strip()
                 if not line:
@@ -263,13 +264,13 @@ def _append_with_compound_key(
                     data = json.loads(line)
                     matches = all(data.get(k) == record_data.get(k) for k in key_fields)
                     if latest_only:
-                        if data.get(key_fields[0]) == record_data.get(key_fields[0]):
-                            latest_matches = matches
+                        if all(data.get(k) == record_data.get(k) for k in scope_fields):
+                            latest_row_matches = matches
                     elif matches:
                         return False
                 except json.JSONDecodeError:
                     continue
-            if latest_matches:
+            if latest_row_matches:
                 return False
             _write_jsonl_record(f, record_json)
         finally:
@@ -331,7 +332,7 @@ def append_task_transition(record: TaskRecord, ledger_path: Path) -> bool:
     """
     return _append_with_compound_key(
         record_json=_task_record_json(record),
-        key_fields=["id", "status"],
+        key_fields=["issue_id", "id", "status"],
         ledger_path=ledger_path,
         latest_only=True,
     )
