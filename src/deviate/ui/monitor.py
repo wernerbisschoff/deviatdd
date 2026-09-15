@@ -26,6 +26,7 @@ VALID_EVENT_TYPES = frozenset(
         "pipeline_halted",
         "pipeline_complete",
         "agent_output",
+        "task_hitl_pending",
     }
 )
 
@@ -65,6 +66,7 @@ class OrchestrationMonitor:
             "phase_change": self._on_phase_change,
             "task_completed": self._on_task_completed,
             "task_failed": self._on_task_failed,
+            "task_hitl_pending": self._on_task_failed,
             "pipeline_complete": self._on_pipeline_complete,
             "agent_output": self._on_agent_output,
         }
