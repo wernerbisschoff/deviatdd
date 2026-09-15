@@ -1997,7 +1997,8 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 
 All state transitions are append-only. No existing line is ever modified or overwritten.
 - `append_issue_transition()`: Idempotent on `(issue_id, status)` compound key
-- `append_task_transition()`: Idempotent on `(id, status)` compound key
+- `append_task_transition()`: skips only when the latest row for that task has the same status.
+  Retries append fresh RED and GREEN rows after rollback. Other tasks do not affect this comparison.
 - `append_task_event()`: always appends (JUDGE revert may repeat `PENDING` / `RED`)
 - `_append_record()` / `_append_with_compound_key()`: Use `fcntl.flock` for file-level
   locking on platforms that support it. If the ledger is non-empty and the last

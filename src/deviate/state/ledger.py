@@ -244,8 +244,9 @@ def _append_with_compound_key(
     record_json: str,
     key_fields: list[str],
     ledger_path: Path,
+    latest_only: bool = False,
 ) -> bool:
-    """Append a record only if no existing entry matches all *key_fields* values."""
+    """Deduplicate against history, or the latest row for the first key field."""
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     record_data = json.loads(record_json)
     with ledger_path.open("a+", encoding="utf-8") as f:
@@ -253,16 +254,23 @@ def _append_with_compound_key(
             fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         try:
             f.seek(0)
+            latest_matches = False
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
                 try:
                     data = json.loads(line)
-                    if all(data.get(k) == record_data.get(k) for k in key_fields):
+                    matches = all(data.get(k) == record_data.get(k) for k in key_fields)
+                    if latest_only:
+                        if data.get(key_fields[0]) == record_data.get(key_fields[0]):
+                            latest_matches = matches
+                    elif matches:
                         return False
                 except json.JSONDecodeError:
                     continue
+            if latest_matches:
+                return False
             _write_jsonl_record(f, record_json)
         finally:
             if HAS_FCNTL:
@@ -318,22 +326,21 @@ def append_task_record(record: TaskRecord, ledger_path: Path) -> bool:
 def append_task_transition(record: TaskRecord, ledger_path: Path) -> bool:
     """Append a status-transition entry for a task.
 
-    Idempotency is checked on the ``(id, status)`` compound key so that
-    multiple transitions for the same task (e.g. PENDING → RED → GREEN)
-    are all recorded, but re-running the same transition is safe.
+    Compare the latest row for this task, not historical phase occurrences.
+    Retries append fresh transitions; repeating the current status is a no-op.
     """
     return _append_with_compound_key(
         record_json=_task_record_json(record),
         key_fields=["id", "status"],
         ledger_path=ledger_path,
+        latest_only=True,
     )
 
 
 def append_task_event(record: TaskRecord, ledger_path: Path) -> None:
     """Always append a task ledger row.
 
-    Used for JUDGE revert records that may repeat ``PENDING`` / ``RED``
-    (``append_task_transition`` is a no-op on a repeated ``(id, status)``).
+    Used for JUDGE feedback that must persist even when the status is unchanged.
     """
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     with ledger_path.open("a+", encoding="utf-8") as handle:
