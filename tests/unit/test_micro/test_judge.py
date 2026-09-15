@@ -4847,3 +4847,83 @@ def test_green_diff_excludes_red_changes_and_keeps_dirty_work(tmp_git_repo: Path
     assert _GATE_IMPL_QUOTE in green
     assert "dirty GREEN edit" in green
     assert "src/new_client.py" in green
+
+
+@pytest.mark.behavioral
+def test_judge_receives_active_contract_and_real_current_diff(
+    tmp_git_repo: Path,
+) -> None:
+    """AC-PLAN-001: inject the active contract and an actual dirty file diff."""
+    from deviate.cli.micro import _run_judge_phase
+    from deviate.core.agent import HandoverManifest
+    from deviate.state.config import SessionState
+
+    repo = tmp_git_repo
+    red_test = repo / "test_feature.py"
+    red_test.write_text(
+        "def test_feature():\n    assert feature() == 1\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "add", "test_feature.py"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "test(TSK-002-02): RED phase"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    red_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    implementation = repo / "feat.py"
+    implementation.write_text("def feat():\n    return 1\n", encoding="utf-8")
+
+    task = {
+        "id": "TSK-002-02",
+        "issue_id": "ISS-010-002",
+        "description": "Judge current diff",
+        "status": "GREEN",
+        "execution_mode": "TDD",
+    }
+    session = SessionState(current_phase="GREEN", red_commit_sha=red_sha)
+    session_path = repo / ".deviate" / "session.json"
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+
+    captured = {}
+    manifest = HandoverManifest(phase="JUDGE", status="PASS", verdict="COMPLIANCE_PASS")
+
+    def capture(prompt: str, *args, **kwargs):
+        captured["prompt"] = prompt
+        return manifest, ""
+
+    with (
+        chdir(repo),
+        patch("deviate.cli.micro._invoke_agent", side_effect=capture),
+        patch(
+            "deviate.cli.micro._build_auto_prompt",
+            return_value='<authoritative_acceptance_contract source="plan.md">AC-PLAN-001</authoritative_acceptance_contract>',
+        ),
+        patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+        patch("deviate.cli.micro._phase_already_done", return_value=False),
+        patch("deviate.cli.micro._make_agent_output_callback", return_value=None),
+        patch("deviate.cli.micro._log_run"),
+    ):
+        _run_judge_phase(
+            task,
+            repo / "tasks.jsonl",
+            session,
+            session_path,
+            Console(),
+        )
+
+    prompt = captured["prompt"]
+    assert "AC-PLAN-001" in prompt
+    diff = re.search(r"<diff>\n(.*?)\n</diff>", prompt, re.DOTALL)
+    assert diff is not None
+    assert "+++ b/feat.py" in diff.group(1)
+    assert "feat.py" in diff.group(1)
+    assert "+def feat():" in diff.group(1)
+    assert "+    return 1" in diff.group(1)
