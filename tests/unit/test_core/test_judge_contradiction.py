@@ -110,8 +110,39 @@ def test_aba_oscillation_is_a_contradiction() -> None:
 def test_explicit_incompatible_fixture_language() -> None:
     current = (
         "The next GREEN attempt must: these requirements are mutually "
-        "incompatible with the submitted-state fixture."
+        "incompatible with the submitted-state fixture that returns a "
+        "different orderViewId."
     )
-    found = detect_judge_requirement_contradiction([INCREMENT], current)
+    found = detect_judge_requirement_contradiction([PRESERVE_FIXTURE], current)
     assert found is not None
     assert found.kind == "explicit"
+
+
+def test_explicit_without_shared_subject_is_not_a_contradiction() -> None:
+    current = (
+        "The next GREEN attempt must: these requirements are mutually "
+        "incompatible with the submitted-state fixture."
+    )
+    assert detect_judge_requirement_contradiction([INCREMENT], current) is None
+
+
+def test_generic_matching_without_shared_identity_is_not_a_contradiction() -> None:
+    generic_match = (
+        "The next GREEN attempt must: Requirement: output values must match "
+        "the snapshot. Correction: update formatting in src/example.py."
+    )
+    keep_tests = (
+        "The next GREEN attempt must: Requirement: preserve existing "
+        "submitted-state tests. Correction: keep the tests passing unchanged."
+    )
+    assert detect_judge_requirement_contradiction([generic_match], keep_tests) is None
+    assert detect_judge_requirement_contradiction([keep_tests], generic_match) is None
+
+
+def test_non_adjacent_history_does_not_halt() -> None:
+    assert (
+        detect_judge_requirement_contradiction(
+            [STRICT_IDENTITY, INCREMENT], PRESERVE_FIXTURE
+        )
+        is None
+    )

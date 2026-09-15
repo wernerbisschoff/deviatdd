@@ -29,8 +29,8 @@ _BOILERPLATE_RE = re.compile(
     re.IGNORECASE,
 )
 _STRICT_MATCH_RE = re.compile(
-    r"\bstrict\b.*\bmatch|\bmust\s+match|\brequire[sd]?\s+\w*\s*match"
-    r"|\bidentity\s+match|\bmatching\b",
+    r"\bstrict\b[^\n.]{0,80}\bmatch|\bidentity\s+match|\bmatch[^\n.]{0,40}\bidentit\w*"
+    r"|\b(?:must|require[sd]?)\b[^\n.]{0,40}\bmatch[^\n.]{0,40}\b(?:id(?:entity|s)?|identit\w*)\b",
     re.IGNORECASE | re.DOTALL,
 )
 _PRESERVE_RE = re.compile(
@@ -179,11 +179,19 @@ def _tokens(text: str) -> frozenset[str]:
     )
 
 
+_ID_TOKEN_RE = re.compile(r"[A-Za-z_]*[Ii][Dd]\b")
+
+
 def _identity_tokens(text: str) -> frozenset[str]:
     tokens = set()
-    for token in _tokens(text):
-        if token in {"identity", "provider"} or token.endswith("id"):
-            tokens.add(token)
+    for match in _ID_TOKEN_RE.findall(text or ""):
+        norm = match.lower().replace("_", "").replace("-", "")
+        if norm and norm not in _IDENTITY_STOP:
+            tokens.add(norm)
+    lowered = (text or "").lower()
+    for word in ("identity", "provider"):
+        if re.search(r"\b" + word + r"\b", lowered):
+            tokens.add(word)
     return frozenset(tokens)
 
 
@@ -202,9 +210,9 @@ def _has_strict_match(text: str) -> bool:
 def _has_preserve_mismatch(text: str) -> bool:
     if not _PRESERVE_RE.search(text):
         return False
-    if _MISMATCH_RE.search(text):
-        return True
-    return bool(_TEST_FIXTURE_RE.search(text) and _MISMATCH_RE.search(text))
+    if not _TEST_FIXTURE_RE.search(text):
+        return False
+    return bool(_MISMATCH_RE.search(text))
 
 
 def _has_preserve_tests(text: str) -> bool:
@@ -225,16 +233,17 @@ def _polar_flip(prior: str, current: str) -> JudgeContradiction | None:
     flipped = (prior_strict and current_preserve) or (current_strict and prior_preserve)
     if not flipped:
         return None
+    shared_identity = sorted(
+        _identity_tokens(prior_focus) & _identity_tokens(current_focus)
+    )
+    if not shared_identity:
+        return None
     shared = tuple(
         sorted(
             (_tokens(prior_focus) | _identity_tokens(prior_focus))
             & (_tokens(current_focus) | _identity_tokens(current_focus))
         )
     )
-    if not shared and not (
-        _identity_tokens(prior_focus) or _identity_tokens(current_focus)
-    ):
-        return None
     return JudgeContradiction(
         kind="polar_flip",
         prior=prior.strip(),
@@ -251,11 +260,15 @@ def _polar_flip(prior: str, current: str) -> JudgeContradiction | None:
 def _explicit(prior: str, current: str) -> JudgeContradiction | None:
     if not _EXPLICIT_RE.search(current):
         return None
+    shared = _tokens(requirement_focus(prior)) & _tokens(requirement_focus(current))
+    shared_identity = _identity_tokens(prior) & _identity_tokens(current)
+    if not shared and not shared_identity:
+        return None
     return JudgeContradiction(
         kind="explicit",
         prior=prior.strip(),
         current=current.strip(),
-        shared_tokens=(),
+        shared_tokens=tuple(sorted(shared | shared_identity)),
         summary=(
             "JUDGE named a mutually incompatible fixture or requirement "
             "conflict. This is a specification decision, not more training."
@@ -316,8 +329,4 @@ def detect_judge_requirement_contradiction(
     found = _explicit(latest, current_text) or _polar_flip(latest, current_text)
     if found:
         return found
-    for prior in reversed(distinct[:-1]):
-        found = _polar_flip(prior, current_text)
-        if found:
-            return found
     return _oscillation(history, current_text)

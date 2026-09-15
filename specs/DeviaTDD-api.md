@@ -1110,12 +1110,15 @@ Tasks without assigned AC references retain the previous full-context behavior. 
     prints only after three RED escalates. Successive JUDGE rejections are
     compared before the next train: `_apply_judge_verdict` reads prior reject
     feedback from `.verdicts.jsonl`, `tasks.md` Judge Feedback, and
-    `session.train_feedback`. When Requirement/Correction text polar-flips
-    (strict identity matching vs preserve conflicting fixtures/tests) or
-    oscillates A-B-A, the runner logs `JUDGE_REQUIREMENT_CONTRADICTION`,
-    marks `HITL_PENDING`, raises `HitlEscalationError`, and does not consume
-    further GREEN/RED train budget (GH-230). Identical restated requirements
-    still train. `LOOP_DETECTED` remains telemetry only. On test failure or `COMPLIANCE_VIOLATION`,
+    `session.train_feedback`. When the latest Requirement/Correction text
+    polar-flips (strict identity matching vs preserve conflicting
+    fixtures/tests about the same shared identity token) or oscillates A-B-A,
+    the runner logs `JUDGE_REQUIREMENT_CONTRADICTION`, marks `HITL_PENDING`,
+    raises `HitlEscalationError`, and does not consume further GREEN/RED train
+    budget (GH-230). Generic `matching` wording without an identity, explicit
+    conflict language without a shared subject, and stale non-adjacent history
+    still train. Identical restated requirements still train. `LOOP_DETECTED`
+    remains telemetry only. On test failure or `COMPLIANCE_VIOLATION`,
     `_execute_rollback()` runs `git reset --hard <boundary_sha>` against
     the boundary the caller threads in, then `git clean -fd`, then
     restores every `tasks.md` that existed at the pre-reset HEAD and is
