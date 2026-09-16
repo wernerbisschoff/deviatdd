@@ -1336,14 +1336,20 @@ Tasks without assigned AC references retain the previous full-context behavior. 
   authoritative id to the worktree `.deviate/session.json`. An empty session
   falls back to the branch. When the branch does not resolve, a valid session
   id stays in place. Bare `deviate micro run` uses the same rule. The runner
-  then dispatches **every PENDING task for that issue** sequentially. Each
-  task gets up to **2 retry attempts** (`_execute_task_with_retry`,
-  `for attempt in range(2)`) before being marked `FAILED` in the
-  issue-scoped `tasks.jsonl`. The pipeline **halts on the first failure**
+  then dispatches **every PENDING or FAILED task for that issue**
+  sequentially. `FAILED` stays in `_find_all_pending_tasks` so a resumed
+  `deviate run` / bare `deviate micro run` retries that prerequisite
+  instead of jumping to a later PENDING card (GH-246). A later card whose
+  `**Dependency**` ids are not all `COMPLETED` is not dispatched;
+  `PREREQUISITE_FAILED` exits `1` when every remaining card is blocked.
+  `COMPLETED` and `CHECKPOINT_FAILED` still skip. Each task gets up to
+  **2 retry attempts** (`_execute_task_with_retry`, `for attempt in
+  range(2)`) before being marked `FAILED` in the issue-scoped
+  `tasks.jsonl`. The pipeline **halts on the first failure**
   (`any_failed = True; break`) and exits with code `1`. When the branch
-  issue has no PENDING tasks, the command prints `NO_PENDING_TASKS` and
-  exits `0`. Meso claim and `MESO_ALREADY_COMPLETE` rewrite the worktree
-  session to the claimed issue.
+  issue has no PENDING or FAILED tasks, the command prints
+  `NO_PENDING_TASKS` and exits `0`. Meso claim and `MESO_ALREADY_COMPLETE`
+  rewrite the worktree session to the claimed issue.
 * **Test-command deadline (`_run_test_cmd` → `_execute_test_command`):**
   Every test command is run through `run_safe_command(command, cwd,
   timeout=...)` (`src/deviate/cli/_safe_commands.py`). The deadline
