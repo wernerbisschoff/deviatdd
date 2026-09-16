@@ -5695,6 +5695,19 @@ def _red_boundary_belongs_to_task(root: Path, sha: str, task_id: str) -> bool:
     return not re.search(r"TSK-\d{3}-\d{2}", subject)
 
 
+def _is_foreign_on_branch_boundary(root: Path, sha: str, task_id: str) -> bool:
+    """True when ``sha`` is an ancestor of HEAD and names another task.
+
+    Only live on-branch leftovers can reset through a completed
+    predecessor (GH-247). A discarded / dangling SHA stays for GH-168
+    ``already_reverted`` classification.
+    """
+    stripped = (sha or "").strip()
+    if not stripped or _red_boundary_belongs_to_task(root, stripped, task_id):
+        return False
+    return _is_ancestor(root, stripped, "HEAD")
+
+
 def _ensure_red_ledger_transition(
     task: dict,
     ledger_path: Path,
@@ -5746,8 +5759,10 @@ def _bind_session_red_boundary(root: Path, session: SessionState, task_id: str) 
     bound SHA, or empty when this task has no recoverable boundary.
     """
     stored = session.red_commit_sha.strip()
-    if stored and not _red_boundary_belongs_to_task(root, stored, task_id):
+    if stored and _is_foreign_on_branch_boundary(root, stored, task_id):
         session.red_commit_sha = ""
+    elif stored and not _red_boundary_belongs_to_task(root, stored, task_id):
+        return stored
     if not _recover_red_commit_boundary(root, session, task_id):
         bound = session.red_commit_sha.strip()
         if bound and _red_boundary_belongs_to_task(root, bound, task_id):
@@ -5828,13 +5843,16 @@ def _recover_red_commit_boundary(
     not a boundary — fall through and recover the standing RED-phase
     commit instead of returning the leftover SHA unchanged.
 
-    GH-247: a resolvable SHA whose subject names another task is not
-    this task's boundary — clear it and recover from this task's ledger
-    plus git evidence.
+    GH-247: a resolvable on-branch SHA whose subject names another task
+    is not this task's boundary — clear it and recover from this task's
+    ledger plus git. An off-branch leftover stays for already-reverted
+    classification (GH-168).
     """
     if _is_red_phase_failing_test_sha(root, session.red_commit_sha):
         if _red_boundary_belongs_to_task(root, session.red_commit_sha, task_id):
             _refresh_session_commit_anchors(root, session)
+            return ""
+        if not _is_ancestor(root, session.red_commit_sha, "HEAD"):
             return ""
         session.red_commit_sha = ""
     latest_status = next(
@@ -5937,7 +5955,6 @@ def _idle_after_tdd(
     session.last_judge_verdict = ""
     session.judge_task_id = ""
     session.judge_red_commit_sha = ""
-    session.red_commit_sha = ""
     _reset_tdd_retry_budget(session)
     session.save(session_path)
     return session
