@@ -848,9 +848,14 @@ The orchestrator must maintain and enforce these structural constraints across a
     write the claimed issue into the worktree session. If neither resolves, no micro tasks are
     dispatched (single-task and `--all` emit NO tasks; `e2e pre` and meso either emit an
     issue-less contract or raise `NO_ACTIVE_ISSUE`). Once the issue is
-    resolved, only the PENDING tasks for that issue (`_find_all_pending_tasks(root,
-    issue_id=...)`) are swept. `NO_PENDING_TASKS` exit 0 is reserved for an empty
-    branch-issue queue. Tasks are dispatched sequentially; each task gets up to
+    resolved, only the PENDING and FAILED tasks for that issue
+    (`_find_all_pending_tasks(root, issue_id=...)`) are swept. `FAILED` is
+    queue-eligible so resume cannot skip a broken prerequisite and start its
+    dependent (GH-246). Cards whose `**Dependency**` ids are not all
+    `COMPLETED` are skipped at dispatch; `PREREQUISITE_FAILED` exits `1`
+    when nothing remains runnable. `COMPLETED` and `CHECKPOINT_FAILED` still
+    skip. `NO_PENDING_TASKS` exit 0 is reserved for an empty branch-issue
+    queue. Tasks are dispatched sequentially; each task gets up to
     **2 retry attempts** (`_execute_task_with_retry`, `for attempt in range(2)`) before
     being marked `FAILED`. The pipeline **halts on the first failure** (`any_failed = True;
     break`) and exits with code `1`.

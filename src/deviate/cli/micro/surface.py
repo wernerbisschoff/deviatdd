@@ -27,7 +27,11 @@ import yaml
 from pydantic import BaseModel
 from rich.console import Console
 
-from deviate.cli.micro.pending import _find_all_pending_tasks
+from deviate.cli.micro.pending import (
+    _find_all_pending_tasks,
+    _latest_task_statuses,
+    _unmet_prerequisite_ids,
+)
 from deviate.core._shared import (
     JUDGE_FEEDBACK_COMMIT_TIMEOUT_SECONDS,
     issue_slug_variants,
@@ -1031,6 +1035,9 @@ def _find_task_record(root: Path, task_id: str) -> tuple[dict, Path] | None:
 
 
 _TERMINAL_STATUSES = {"COMPLETED", "FAILED", "CHECKPOINT_FAILED"}
+# FAILED remains terminal for already-done / checkpoint close, but the
+# resume queue must reselect it so dependents cannot skip a broken prereq.
+_QUEUE_SKIP_STATUSES = frozenset({"COMPLETED", "CHECKPOINT_FAILED"})
 _ALREADY_DONE_STATUSES = {"COMPLETED"}
 
 
@@ -1453,7 +1460,17 @@ def _resolve_task_context(task_id: str | None, root: Path) -> tuple[dict, Path] 
         # Empty queue is a graceful no-op, not an error. The trainer's
         # empty-queue contract (deviatdd skill table) documents exit 0.
         raise typer.Exit(code=0)
-    return pending[0]
+    latest = _latest_task_statuses(root, issue_id)
+    for rec, ledger in pending:
+        if not _unmet_prerequisite_ids(rec, latest):
+            return rec, ledger
+    blocked, _ledger = pending[0]
+    unmet = _unmet_prerequisite_ids(blocked, latest)
+    console.print(
+        f"[red]PREREQUISITE_FAILED[/] {blocked.get('id')} depends on "
+        f"{', '.join(unmet) or 'an incomplete prerequisite'}"
+    )
+    raise typer.Exit(code=1)
 
 
 def _start_phase_from_status(status: str) -> str | None:
@@ -7452,9 +7469,19 @@ def _run_all(
     )
 
     any_failed = False
+    dispatched_any = False
     try:
         with monitor:
             for idx, (task, ledger_file) in enumerate(pending):
+                latest = _latest_task_statuses(root, issue_id)
+                unmet = _unmet_prerequisite_ids(task, latest)
+                if unmet:
+                    _log(
+                        "skipping dependent "
+                        f"{task.get('id')} until {', '.join(unmet)} complete"
+                    )
+                    continue
+                dispatched_any = True
                 if not _execute_task_with_retry(
                     task,
                     ledger_file,
@@ -7474,6 +7501,20 @@ def _run_all(
                         task_id=task.get("id", "?"),
                     )
                     break
+            if not any_failed and not dispatched_any and pending:
+                blocked = pending[0][0]
+                unmet = _unmet_prerequisite_ids(
+                    blocked, _latest_task_statuses(root, issue_id)
+                )
+                any_failed = True
+                c.print(
+                    f"[red]PREREQUISITE_FAILED[/] {blocked.get('id')} depends on "
+                    f"{', '.join(unmet) or 'an incomplete prerequisite'}"
+                )
+                monitor.push_event(
+                    "pipeline_halted",
+                    task_id=blocked.get("id", "?"),
+                )
 
     except KeyboardInterrupt:
         monitor.signal_keyboard_interrupt()
