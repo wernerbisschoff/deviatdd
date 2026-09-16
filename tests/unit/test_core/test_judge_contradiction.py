@@ -7,6 +7,8 @@ fixtures that returned a different orderViewId.
 
 from __future__ import annotations
 
+import pytest
+
 from deviate.core.judge_contradiction import (
     detect_judge_requirement_contradiction,
     extract_repair_fields,
@@ -146,3 +148,34 @@ def test_non_adjacent_history_does_not_halt() -> None:
         )
         is None
     )
+
+
+@pytest.mark.behavioral
+def test_same_requirement_with_opposite_polarity_is_a_contradiction() -> None:
+    prior = (
+        "The next GREEN attempt must require the returned orderViewId to "
+        "match the requested identity."
+    )
+    current = (
+        "The next GREEN attempt must reject matching the requested "
+        "orderViewId and preserve the provider identity instead."
+    )
+
+    found = detect_judge_requirement_contradiction([prior], current)
+
+    assert found is not None
+    assert found.kind == "polar_flip"
+
+
+@pytest.mark.behavioral
+def test_repeated_aba_detection_returns_one_stable_result() -> None:
+    first = detect_judge_requirement_contradiction(
+        [REQUESTED_ID, PROVIDER_ID], REQUESTED_ID
+    )
+    second = detect_judge_requirement_contradiction(
+        [REQUESTED_ID, PROVIDER_ID], REQUESTED_ID
+    )
+
+    assert first is not None
+    assert second == first
+    assert first.kind == "oscillation"

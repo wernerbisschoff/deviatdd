@@ -9,8 +9,8 @@ implementation training.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 _REPAIR_FIELD_RE = re.compile(
     r"^(?:[-*]\s+)?(?:\*\*)?(Requirement|Evidence|Correction|Verification|Boundary)"
@@ -215,8 +215,8 @@ def _has_preserve_mismatch(text: str) -> bool:
     return bool(_MISMATCH_RE.search(text))
 
 
-def _has_preserve_tests(text: str) -> bool:
-    return bool(_PRESERVE_RE.search(text) and _TEST_FIXTURE_RE.search(text))
+def _has_preserve_identity(text: str) -> bool:
+    return bool(_PRESERVE_RE.search(text) and _identity_tokens(text))
 
 
 def _polar_flip(prior: str, current: str) -> JudgeContradiction | None:
@@ -224,11 +224,11 @@ def _polar_flip(prior: str, current: str) -> JudgeContradiction | None:
     current_focus = requirement_focus(current)
     prior_strict = _has_strict_match(prior_focus)
     current_strict = _has_strict_match(current_focus)
-    prior_preserve = _has_preserve_mismatch(prior_focus) or (
-        _has_preserve_tests(prior_focus) and bool(_identity_tokens(prior_focus))
+    prior_preserve = _has_preserve_mismatch(prior_focus) or _has_preserve_identity(
+        prior_focus
     )
-    current_preserve = _has_preserve_mismatch(current_focus) or (
-        _has_preserve_tests(current_focus) and bool(_identity_tokens(current_focus))
+    current_preserve = _has_preserve_mismatch(current_focus) or _has_preserve_identity(
+        current_focus
     )
     flipped = (prior_strict and current_preserve) or (current_strict and prior_preserve)
     if not flipped:
