@@ -49,6 +49,8 @@ task will fail permanently.**
 {task_content}
 </task_content>
 
+{layer_lock}
+
 {train_feedback}
 
 <spec_content>
@@ -86,7 +88,7 @@ task will fail permanently.**
 
 <step id="feedback_ingestion">
 1. Read all JUDGE rounds in `<train_feedback>` in order, plus current retry feedback, as one mandatory correction list; read XML character references as literal text.
-2. Keep earlier constraints unless later feedback explicitly replaces them; explain replacements in the rationale.
+2. Keep earlier constraints unless later feedback explicitly replaces them; explain replacements in the rationale. The injected `<layer_lock>` and `{test_strategy}` / `{test_write_dir}` / `{test_command}` outrank JUDGE feedback that names a different layer, write dir, or command — do not migrate the suite.
 3. Apply corrections within GREEN's implementation boundary — preserve RED tests; cite the implementation change and verification, or report the conflict instead of widening scope.
 </step>
 

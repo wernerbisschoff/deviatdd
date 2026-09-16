@@ -120,7 +120,7 @@ Key signals:
 | `POST_CMD_FAILURE` | Post-phase commit/lint hook failed. |
 | `JUDGE_REJECTED` with `head_sha`/`reset_to`/`recovery_ref` | Rolled-back tree — `git show <head_sha>` or `git switch <recovery_ref>` inspects it (never `git stash`). |
 | `LOOP_DETECTED` / `CYCLE_END` | Repeated JUDGE rejects (`blast=`, `streak=`) / task left the cycle — read `.verdicts.jsonl`. |
-| `JUDGE_REQUIREMENT_CONTRADICTION` / `HITL_REQUIRED` | Successive JUDGE requirements conflict (strict identity matching vs preserve a conflicting fixture). Do not keep training. Choose one spec interpretation, correct the fixture or requirement, then retry. |
+| `JUDGE_REQUIREMENT_CONTRADICTION` / `HITL_REQUIRED` | Successive JUDGE requirements conflict (strict identity matching vs preserve a conflicting fixture). Do not keep training. Choose one spec interpretation, correct the fixture or requirement, then retry. A unit↔integration layer flip on a stamped task should have been prevented by `<layer_lock>` (GH-248); this HITL is the backstop. |
 | `FEEDBACK_COMMIT_FAILED` | Auto-GREEN feedback-marker commit failed; train boundary degraded. |
 
 ### Step 3: Unblock or escalate

@@ -62,7 +62,9 @@ def _assert_integration_lock(prompt: str) -> None:
 
 
 class TestLayerStamp:
-    def test_integration_task_stamps_write_dir_and_command(self, tmp_path: Path) -> None:
+    def test_integration_task_stamps_write_dir_and_command(
+        self, tmp_path: Path
+    ) -> None:
         task = _integration_task(tmp_path)
         layer = micro._layer_contract_fields(tmp_path, task)
         assert layer["test_strategy"] == "integration"

@@ -34,11 +34,13 @@ ledger, and forces pipeline retries:**
 {task_content}
 </task_content>
 
+{layer_lock}
+
 {train_feedback}
 
 <step id="feedback_ingestion">
 1. Read all JUDGE rounds in `<train_feedback>` in order, plus current retry feedback, as one mandatory correction list; read XML character references as literal text.
-2. Keep earlier constraints unless later feedback explicitly replaces them; explain replacements and unresolved conflicts in the rationale.
+2. Keep earlier constraints unless later feedback explicitly replaces them; explain replacements and unresolved conflicts in the rationale. The injected `<layer_lock>` and `{test_strategy}` / `{test_write_dir}` / `{test_command}` outrank JUDGE feedback that names a different layer, write dir, or command — do not migrate the suite.
 3. Apply corrections within RED's tests-only boundary — cite the changed test or give a test-based justification; preserve GREEN-directed constraints for handoff, never implement production changes.
 </step>
 

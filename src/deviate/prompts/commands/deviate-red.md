@@ -20,6 +20,8 @@ Manual mode: run the scripts yourself.
 2. Parse the contract's `task_entry` field. It carries this task's
    `tasks.md` card verbatim, including all complete `**Judge Feedback**` rounds.
    Apply these rounds using the core body's `<train_feedback>` rules.
+   The pre contract `test_strategy` / `test_write_dir` / `test_command`
+   outrank Judge Feedback that names a different layer.
 There is no separate feedback injection in manual mode.
    Read `spec_content` as the core body's acceptance context. It contains assigned plan ACs and linked issue AO entries.
    Plan scenarios define required behavior; AO entries supply intent. Do not fetch sibling criteria.
