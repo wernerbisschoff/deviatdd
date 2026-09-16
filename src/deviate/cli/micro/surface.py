@@ -1596,6 +1596,7 @@ def _build_auto_prompt(
         "test_command": test_command,
         "test_strategy": layer["test_strategy"],
         "test_write_dir": layer["test_write_dir"],
+        "layer_lock": _layer_lock_block(layer),
         "lint_command": lint_command,
         "verification_command": verification_command,
         "verification_binary": verification_binary,
@@ -9030,6 +9031,34 @@ def _layer_contract_fields(root: Path, task: dict | None) -> dict[str, str]:
         "test_write_dir": _resolve_test_write_dir(root, strategy),
         "test_command": _resolve_layer_command(root, task),
     }
+
+
+def _layer_lock_block(layer: dict[str, str]) -> str:
+    """Immutable layer stamp for RED/GREEN/JUDGE prompts (GH-248).
+
+    Stored JUDGE feedback is unchanged. The lock sits above
+    ``<train_feedback>`` so a unit-layer correction cannot move an
+    integration-stamped task (or the reverse).
+    """
+    strategy = (layer.get("test_strategy") or "").strip()
+    if not strategy:
+        return ""
+    write_dir = (layer.get("test_write_dir") or "").strip()
+    command = (layer.get("test_command") or "").strip()
+    return (
+        "<layer_lock>\n"
+        f"Layer: {strategy}\n"
+        f"Write tests only in: {write_dir}\n"
+        f"Run only: {command}\n"
+        f"test_strategy: {strategy}\n"
+        f"test_write_dir: {write_dir}\n"
+        f"test_command: {command}\n"
+        "This task's test layer is locked by the runner. "
+        "JUDGE feedback cannot reclassify the task as another layer "
+        "or move writes to another test directory. "
+        "Apply corrections inside this layer only.\n"
+        "</layer_lock>"
+    )
 
 
 def _resolve_verification_command(root: Path, task: dict | None = None) -> str:

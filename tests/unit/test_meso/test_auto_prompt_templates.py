@@ -548,6 +548,23 @@ class TestLayerStampedPrompts:
         assert "NEVER modify test files" in auto or "must not write" in auto.lower()
         assert re.search(r"mise integ(?!ration)", auto) is None
 
+    def test_judge_receives_layer_lock_and_must_not_flip_layer(self):
+        auto = _read_template("judge.md")
+        assert "{layer_lock}" in auto
+        assert "Layer: {test_strategy}" in auto
+        assert "Write tests only in: {test_write_dir}" in auto
+        assert "Run only: {test_command}" in auto
+        lowered = auto.lower()
+        assert "cannot reclassify" in lowered or "cannot change this lock" in lowered
+        assert re.search(r"mise integ(?!ration)", auto) is None
+
+    def test_red_and_green_layer_lock_outranks_judge_feedback(self):
+        for name in ("red.md", "green.md"):
+            auto = _read_template(name)
+            assert "{layer_lock}" in auto
+            lowered = auto.lower()
+            assert "outrank" in lowered or "cannot reclassify" in lowered
+
     def test_red_keeps_transport_and_honeycomb(self):
         auto = _read_template("red.md")
         assert "Transport of record" in auto

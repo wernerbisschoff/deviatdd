@@ -43,6 +43,7 @@ Defective original RED tests require `red_baseline_integrity: FAIL`, `revert_red
 If both phases are defective, select `FAIL`. Use null for an unavailable or unverified RED baseline.
 Omitted or null classification preserves legacy routing. Mechanical and test-defect overrides remain unchanged.
 The runner compares successive rejection Requirement/Correction texts. Mutually incompatible fixture or identity outcomes escalate to HITL instead of more GREEN/RED training.
+The injected test layer (`test_strategy` / `test_write_dir` / `test_command`) is locked. Do not require a different layer than the contract. GH-230 HITL remains the backstop when successive requirements still contradict.
 
 ```yaml
 phase: "JUDGE"
