@@ -1878,9 +1878,12 @@ def _run_red_phase(
         ledger_path, task.get("id", ""), "RED"
     ):
         c.print(f"  [dim]RED already done for {_task_label(task)}, skipping[/]")
-        if not _has_red_commit_boundary(session):
-            if not _recover_red_commit_boundary(Path.cwd(), session, tid):
-                session.save(session_path)
+        # A leftover SHA from a completed predecessor is not this task's
+        # rollback boundary (GH-247). Rebind, then keep latest status RED
+        # so GREEN post cannot see PENDING after existing-test / resume.
+        _bind_session_red_boundary(Path.cwd(), session, tid)
+        _ensure_red_ledger_transition(task, ledger_path)
+        session.save(session_path)
         return _RedPhaseOutcome(session, None)
     # A rollback boundary belongs to the active task.  Clear any boundary
     # retained by a completed prior task before the RED agent can fail; this
@@ -1986,15 +1989,7 @@ def _run_red_phase(
             )
         _run_format_cmd(root)
         try:
-            try:
-                record = TaskRecord.model_validate(task)
-            except Exception:
-                found = _find_task_record(root, tid)
-                record = TaskRecord.model_validate(
-                    found[0] if found is not None else task
-                )
-            record.status = "RED"
-            append_task_transition(record, ledger_path)
+            _ensure_red_ledger_transition(task, ledger_path, root=root)
         except Exception as e:
             raise PhaseFailedError(f"RED phase ledger update failed for {tid}: {e}")
         session = session.force_transition_to("RED")
@@ -2389,6 +2384,9 @@ def _run_green_phase(
     except Exception:
         _green_head_before = ""
     try:
+        # Existing-test / skip-RED resume must have a RED row before the
+        # GREEN kernel guard (GH-247). No-op when latest is already RED.
+        _ensure_red_ledger_transition(task, ledger_path, root=root)
         _green_post_kernel(root, tid, ledger_hint=ledger_path)
     except KernelError as exc:
         if exc.token != "TASK_NOT_FOUND" or not _seed_unseen_task_basis(
@@ -2684,10 +2682,11 @@ def _planned_revert_anchor(
     """
     head_sha = _git_capture(root, "rev-parse", "HEAD")
     if action == "revert_green":
+        _bind_session_red_boundary(root, session, tid)
         reset_to = (session.red_commit_sha or "").strip()
     elif session.red_commit_sha:
         reset_to = (
-            _resolve_revert_red_boundary(root, session)
+            _resolve_revert_red_boundary(root, session, tid)
             or session.red_commit_sha.strip()
         )
     else:
@@ -3296,7 +3295,9 @@ def _refresh_session_commit_anchors(root: Path, session: SessionState) -> bool:
     return changed
 
 
-def _resolve_revert_red_boundary(root: Path, session: SessionState) -> str:
+def _resolve_revert_red_boundary(
+    root: Path, session: SessionState, task_id: str = ""
+) -> str:
     """Return the SHA ``revert_red`` should reset to, or empty.
 
     Classify the stored SHA before remapping so a discarded RED is not
@@ -3305,7 +3306,12 @@ def _resolve_revert_red_boundary(root: Path, session: SessionState) -> str:
     When the stored SHA is already behind HEAD because a prior
     ``revert_red`` discarded it (``already_reverted``), no-op onto
     current HEAD. Never raise ``ROLLBACK_STALE_RED_SHA`` on that path.
+
+    GH-247: a predecessor SHA is rebound or refused so ``revert_red``
+    cannot reset through a completed earlier task.
     """
+    if task_id:
+        _bind_session_red_boundary(root, session, task_id)
     stored = session.red_commit_sha.strip()
     kind = _red_anchor_kind(root, stored)
     if kind == "rewritten":
@@ -3476,7 +3482,11 @@ def _require_revert_green_boundary(root: Path, session: SessionState, tid: str) 
     only a boundary with no safe on-branch match raises
     ``ROLLBACK_STALE_RED_SHA`` and does not reset — that refuse is
     ``revert_green`` only.
+
+    GH-247: rebind a leftover predecessor SHA to this task before
+    classifying. Rolling back through a completed predecessor is refused.
     """
+    _bind_session_red_boundary(root, session, tid)
     sha = session.red_commit_sha.strip()
     if not sha:
         raise PhaseFailedError(
@@ -5053,7 +5063,7 @@ def _apply_judge_verdict(
         rollback_attempts = 0
         try:
             if action == "revert_red":
-                pre_red = _resolve_revert_red_boundary(root, session)
+                pre_red = _resolve_revert_red_boundary(root, session, tid)
                 if pre_red:
                     rollback_attempts += 1
                     rollback = _execute_rollback(
@@ -5065,7 +5075,9 @@ def _apply_judge_verdict(
                         attempt=rollback_attempts,
                     )
                     _reset_isolated_env_revert_red(root, task, c)
-                elif session.red_commit_sha:
+                elif session.red_commit_sha and _red_boundary_belongs_to_task(
+                    root, session.red_commit_sha, tid
+                ):
                     # No pre-RED anchor, but ``session.red_commit_sha`` is
                     # known — fall back to that explicit boundary so the
                     # runner is never stuck and never guesses.
@@ -5665,6 +5677,90 @@ def _has_red_commit_boundary(session: SessionState) -> bool:
     return bool(session.red_commit_sha.strip())
 
 
+def _red_boundary_belongs_to_task(root: Path, sha: str, task_id: str) -> bool:
+    """True when ``sha`` is this task's RED/feedback commit, or unresolvable.
+
+    Unresolvable SHAs (tests mock them) are not proven foreign. A resolved
+    subject that names another ``TSK-`` id is a cross-task leftover.
+    """
+    stripped = (sha or "").strip()
+    tid = (task_id or "").strip()
+    if not stripped or not tid:
+        return False
+    subject = _git_commit_subject(root, stripped)
+    if not subject:
+        return True
+    if tid in subject:
+        return True
+    return not re.search(r"TSK-\d{3}-\d{2}", subject)
+
+
+def _ensure_red_ledger_transition(
+    task: dict,
+    ledger_path: Path,
+    root: Path | None = None,
+) -> None:
+    """Append RED when this task's latest row is not already RED (GH-247)."""
+    tid = str(task.get("id") or "")
+    if not tid or ledger_path is None:
+        return
+    latest = ""
+    if ledger_path.is_file():
+        for rec in _read_ledger_records(ledger_path):
+            if rec.get("id") == tid:
+                latest = str(rec.get("status") or "")
+    if latest == "RED":
+        return
+    try:
+        record = TaskRecord.model_validate({**task, "status": "RED"})
+    except Exception:
+        found = _find_task_record(root, tid) if root is not None else None
+        try:
+            record = TaskRecord.model_validate(
+                {**(found[0] if found is not None else task), "status": "RED"}
+            )
+        except Exception:
+            record = TaskRecord(
+                id=tid,
+                issue_id=str(task.get("issue_id") or ""),
+                description=str(task.get("description") or tid),
+                status="RED",
+                execution_mode=task.get("execution_mode", "TDD"),
+            )
+    record.status = "RED"  # type: ignore[assignment]
+    if not append_task_transition(record, ledger_path):
+        latest_after = ""
+        if ledger_path.is_file():
+            for rec in _read_ledger_records(ledger_path):
+                if rec.get("id") == tid:
+                    latest_after = str(rec.get("status") or "")
+        if latest_after != "RED":
+            append_task_event(record, ledger_path)
+
+
+def _bind_session_red_boundary(root: Path, session: SessionState, task_id: str) -> str:
+    """Keep or recover a RED SHA that belongs to ``task_id``.
+
+    A leftover SHA from a completed predecessor is cleared so JUDGE
+    rollback cannot reset through that predecessor (GH-247). Returns the
+    bound SHA, or empty when this task has no recoverable boundary.
+    """
+    stored = session.red_commit_sha.strip()
+    if stored and not _red_boundary_belongs_to_task(root, stored, task_id):
+        session.red_commit_sha = ""
+    if not _recover_red_commit_boundary(root, session, task_id):
+        bound = session.red_commit_sha.strip()
+        if bound and _red_boundary_belongs_to_task(root, bound, task_id):
+            return bound
+        session.red_commit_sha = ""
+        return ""
+    if session.red_commit_sha.strip() and not _red_boundary_belongs_to_task(
+        root, session.red_commit_sha, task_id
+    ):
+        session.red_commit_sha = ""
+    return session.red_commit_sha.strip()
+
+
 def _bind_judge_forward_route(session: SessionState, task_id: str) -> None:
     """Record which task + RED SHA a JUDGE forward route belongs to."""
     session.judge_task_id = task_id
@@ -5731,10 +5827,16 @@ def _recover_red_commit_boundary(
     GH-236: a non-empty docs-feedback SHA that does not rest on RED is
     not a boundary — fall through and recover the standing RED-phase
     commit instead of returning the leftover SHA unchanged.
+
+    GH-247: a resolvable SHA whose subject names another task is not
+    this task's boundary — clear it and recover from this task's ledger
+    plus git evidence.
     """
     if _is_red_phase_failing_test_sha(root, session.red_commit_sha):
-        _refresh_session_commit_anchors(root, session)
-        return ""
+        if _red_boundary_belongs_to_task(root, session.red_commit_sha, task_id):
+            _refresh_session_commit_anchors(root, session)
+            return ""
+        session.red_commit_sha = ""
     latest_status = next(
         (
             rec.get("status", "")
@@ -5835,6 +5937,7 @@ def _idle_after_tdd(
     session.last_judge_verdict = ""
     session.judge_task_id = ""
     session.judge_red_commit_sha = ""
+    session.red_commit_sha = ""
     _reset_tdd_retry_budget(session)
     session.save(session_path)
     return session
@@ -5919,6 +6022,8 @@ def _rollback_pre_red_if_resolvable(
             return None
     red_sha = session.red_commit_sha
     if not red_sha or not re.fullmatch(r"[a-f0-9]{40}", red_sha):
+        return None
+    if not _red_boundary_belongs_to_task(root, red_sha, task_id):
         return None
     pre_red = _resolve_pre_red_sha(root, red_sha)
     if not pre_red or not re.fullmatch(r"[a-f0-9]{40}", pre_red):
@@ -6174,6 +6279,9 @@ def _run_tdd_cycle_impl(
     # Fresh TDD cycle: leftover TRAIN 3/3 in gitignored session.json
     # must not block a new `micro run`. JUDGE notes stay.
     _reset_tdd_retry_budget(session)
+    # GH-247: drop a predecessor RED SHA before this task's cycle so
+    # resume / skip-RED cannot roll back through a completed earlier task.
+    _bind_session_red_boundary(root, session, tid)
     session.save(session_path)
 
     task_desc = task.get("description", "")
@@ -8180,11 +8288,14 @@ def _green_post_kernel(
     """Shared GREEN post side-effect kernel for manual and auto surfaces."""
     tid = (task_id or "").strip()
     latest = _find_task_record(root, tid) if tid else None
-    if latest is None and tid and ledger_hint is not None:
+    if tid and ledger_hint is not None:
+        hint_rec = None
         for rec in reversed(_read_ledger_records(ledger_hint)):
             if rec.get("id") == tid:
-                latest = (rec, ledger_hint)
+                hint_rec = rec
                 break
+        if hint_rec is not None and (latest is None or hint_rec.get("status") == "RED"):
+            latest = (hint_rec, ledger_hint)
     if latest is None:
         raise KernelError("TASK_NOT_FOUND", tid)
     record_data, ledger_path = latest
