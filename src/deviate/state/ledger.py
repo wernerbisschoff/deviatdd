@@ -31,7 +31,7 @@ class IssueRecord(BaseModel):
     source_file: str
     blocked_by: list[str] = []
     coordinates_with: list[str] = []
-    timestamp: datetime
+    timestamp: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = {"extra": "forbid"}
@@ -39,10 +39,14 @@ class IssueRecord(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _drop_retired_flow_refs(cls, data: Any) -> Any:
-        """Ignore historical ``flow_refs`` on append-only ledger rows."""
-        if isinstance(data, dict) and "flow_refs" in data:
+        """Ignore historical ``flow_refs`` plus external ``seq``/``envelope_id``."""
+        if isinstance(data, dict) and (
+            "flow_refs" in data or "seq" in data or "envelope_id" in data
+        ):
             data = dict(data)
             data.pop("flow_refs", None)
+            data.pop("seq", None)
+            data.pop("envelope_id", None)
         return data
 
 
@@ -558,7 +562,7 @@ def _get_unblocked_backlog_features(ledger_path: Path) -> list[IssueRecord]:
         if is_unblocked:
             candidates.append(IssueRecord.model_validate(record))
 
-    candidates.sort(key=lambda r: r.created_at or r.timestamp)
+    candidates.sort(key=lambda r: r.created_at or r.timestamp or datetime.min)
     return candidates
 
 
