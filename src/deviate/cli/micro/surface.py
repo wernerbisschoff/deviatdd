@@ -5782,10 +5782,17 @@ def _is_foreign_on_branch_boundary(root: Path, sha: str, task_id: str) -> bool:
     return _is_ancestor(root, stripped, "HEAD")
 
 
+_QUEUE_ONLY_TASK_FIELDS = frozenset({"depends_on"})
+
+
 def _ledger_task_record(task: dict) -> TaskRecord:
     """Keep queue dependencies out of the strict append-only record schema."""
     return TaskRecord.model_validate(
-        {key: value for key, value in task.items() if key != "depends_on"}
+        {
+            key: value
+            for key, value in task.items()
+            if key not in _QUEUE_ONLY_TASK_FIELDS
+        }
     )
 
 
@@ -8427,7 +8434,7 @@ def _green_post_kernel(
             f"expected RED, found {record_data.get('status', '')}",
         )
     try:
-        record = TaskRecord.model_validate(record_data)
+        record = _ledger_task_record(record_data)
     except Exception as exc:
         raise KernelError("TASK_NOT_FOUND", tid) from exc
     record.status = "GREEN"  # type: ignore[assignment]
@@ -8557,7 +8564,7 @@ def _refactor_post_kernel(
         raise KernelError("LEDGER_UPDATE_FAILED", str(exc)) from exc
     except Exception:
         try:
-            record = TaskRecord.model_validate(record_data)
+            record = _ledger_task_record(record_data)
             record.status = "COMPLETED"  # type: ignore[assignment]
             append_task_transition(record, ledger_path)
         except Exception as exc:
@@ -10177,7 +10184,7 @@ def refactor_post() -> None:
         raise typer.Exit(code=1)
     task_uuid = green_task[0].get("id", "")
     try:
-        record = TaskRecord.model_validate(green_task[0])
+        record = _ledger_task_record(green_task[0])
         record.status = "COMPLETED"  # type: ignore[assignment]
         append_task_transition(record, green_task[1])
     except Exception as e:
