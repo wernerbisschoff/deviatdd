@@ -852,7 +852,10 @@ The orchestrator must maintain and enforce these structural constraints across a
     resolved, only the PENDING and FAILED tasks for that issue
     (`_find_all_pending_tasks(root, issue_id=...)`) are swept. `FAILED` is
     queue-eligible so resume cannot skip a broken prerequisite and start its
-    dependent (GH-246). Cards whose `**Dependency**` ids are not all
+    dependent (GH-246). Manual `deviate red pre --task` / `red post --task-id`
+    recover that same FAILED card: post resolves the allocated PENDING or
+    FAILED record before verification and does not select the next PENDING
+    (GH-254). Cards whose `**Dependency**` ids are not all
     `COMPLETED` are skipped at dispatch; `PREREQUISITE_FAILED` exits `1`
     when nothing remains runnable. `COMPLETED` and `CHECKPOINT_FAILED` still
     skip. `NO_PENDING_TASKS` exit 0 is reserved for an empty branch-issue

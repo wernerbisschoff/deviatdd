@@ -350,6 +350,125 @@ class TestRedPostTaskId:
             assert head_after == head_before
 
 
+class TestRedPostFailedTaskRecovery:
+    """GH-254: red post honors a FAILED task allocated by red pre."""
+
+    ISSUE_ID = "ISS-001-001"
+
+    def _seed_failed_then_pending(self, root: Path) -> Path:
+        from tests.conftest import _git_env as isolation_git_env
+
+        dot_dir = root / ".deviate"
+        dot_dir.mkdir(parents=True, exist_ok=True)
+        session = SessionState(current_phase="IDLE", active_issue_id=self.ISSUE_ID)
+        session.save(dot_dir / "session.json")
+
+        spec_dir = root / "specs" / "001-recovery" / "001-failed-red"
+        spec_dir.mkdir(parents=True, exist_ok=True)
+        (root / "specs" / "issues.jsonl").write_text(
+            json.dumps(
+                {
+                    "issue_id": self.ISSUE_ID,
+                    "source_file": "specs/001-recovery/issues/001-failed-red.md",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (spec_dir / "tasks.md").write_text(
+            "# Implementation Tasks\n\n"
+            "- TSK-001-01: failed slice after TRAIN_EXHAUSTED\n"
+            "  - **Mode**: TDD\n"
+            "- TSK-001-02: later pending slice\n"
+            "  - **Mode**: TDD\n",
+            encoding="utf-8",
+        )
+        ledger_path = spec_dir / "tasks.jsonl"
+        _write_ledger(
+            ledger_path,
+            _make_task_record(
+                task_id="TSK-001-01",
+                issue_id=self.ISSUE_ID,
+                description="failed slice after TRAIN_EXHAUSTED",
+                status="FAILED",
+            ),
+            _make_task_record(
+                task_id="TSK-001-02",
+                issue_id=self.ISSUE_ID,
+                description="later pending slice",
+                status="PENDING",
+            ),
+        )
+        test_file = root / "tests" / "test_failing.py"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("def test_fail():\n    assert False\n")
+        subprocess.run(
+            ["git", "add", "."], cwd=root, env=isolation_git_env(), check=True
+        )
+        return ledger_path
+
+    @pytest.mark.behavioral
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._run_test_cmd")
+    def test_red_post_honors_failed_task_allocated_by_pre(
+        self, mock_run_test, mock_run_format, tmp_git_repo: Path
+    ):
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="1 failed", stderr=""
+        )
+        mock_run_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        from tests.conftest import _git_env as isolation_git_env
+
+        with chdir(tmp_git_repo):
+            ledger_path = self._seed_failed_then_pending(tmp_git_repo)
+
+            pre = runner.invoke(cli, ["red", "pre", "--task", "TSK-001-01"])
+            assert pre.exit_code == 0, (
+                f"Expected red pre exit 0, got {pre.exit_code}: {pre.output}"
+            )
+            contract = json.loads(pre.output)
+            assert contract.get("task_id") == "TSK-001-01"
+
+            result = runner.invoke(cli, ["red", "post", "--task-id", "TSK-001-01"])
+
+            assert result.exit_code == 0, (
+                f"Expected exit 0, got {result.exit_code}: {result.output}"
+            )
+            assert "TASK_ID_MISMATCH" not in result.output
+            assert "RED_POST_OK" in result.output
+            verified = mock_run_test.call_args.args[1]
+            assert verified is not None
+            assert verified.get("id") == "TSK-001-01", (
+                "red post must verify the FAILED task allocated by pre, "
+                f"not {verified.get('id')}"
+            )
+            rows = [
+                json.loads(line)
+                for line in ledger_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            assert any(
+                row.get("status") == "RED" and row.get("id") == "TSK-001-01"
+                for row in rows
+            )
+            latest_by_id: dict[str, str] = {}
+            for row in rows:
+                latest_by_id[row["id"]] = row["status"]
+            assert latest_by_id["TSK-001-01"] == "RED"
+            assert latest_by_id["TSK-001-02"] == "PENDING"
+            log = subprocess.run(
+                ["git", "log", "--oneline", "-1"],
+                cwd=tmp_git_repo,
+                capture_output=True,
+                text=True,
+                env=isolation_git_env(),
+            )
+            assert "RED phase" in log.stdout
+            assert "TSK-001-01" in log.stdout
+
+
 def _write_red_feedback_specs(root: Path) -> tuple[dict, Path]:
     issue_id = "ISS-ADH-043"
     source_file = "specs/adhoc/issues/043-auto-red-feedback.md"
