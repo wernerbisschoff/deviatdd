@@ -28,10 +28,18 @@ from tests.helpers.cycle_driver import (
     seed_cycle_repo,
 )
 from tests.unit.test_core.test_judge_contradiction import (
+    CANDIDATE_EVIDENCE,
     ERROR_PATH,
+    IMPLEMENTATION_COVERAGE,
+    IMPLEMENTATION_COVERAGE_RESTATED,
     INCREMENT,
+    INTEGRATION_LAYER,
     PRESERVE_FIXTURE,
+    REQUIRED_CHANGELOG,
     STRICT_IDENTITY,
+    UNIT_LAYER,
+    VERIFY_CANDIDATE,
+    VERIFY_CANDIDATE_RESTATED,
 )
 from tests.unit.test_micro.test_judge_refactor_note_routing import (
     _manifest,
@@ -93,6 +101,54 @@ class TestApplyJudgeVerdictContradictionHalt:
         assert session.pending_judge_action == "revert_green"
         statuses = _ledger_statuses_path(ledger_path)
         assert "HITL_PENDING" not in statuses
+
+    def test_additive_verification_changelog_aba_still_trains(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _red_sha, ledger_path = _seed_green_repo(tmp_git_repo)
+        _apply_existing(tmp_git_repo, ledger_path, _reject_manifest(VERIFY_CANDIDATE))
+        _apply_existing(tmp_git_repo, ledger_path, _reject_manifest(REQUIRED_CHANGELOG))
+        session = _apply_existing(
+            tmp_git_repo, ledger_path, _reject_manifest(VERIFY_CANDIDATE_RESTATED)
+        )
+        assert session.pending_judge_action == "revert_green"
+        statuses = _ledger_statuses_path(ledger_path)
+        assert "HITL_PENDING" not in statuses
+
+    def test_additive_coverage_evidence_aba_still_trains(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _red_sha, ledger_path = _seed_green_repo(tmp_git_repo)
+        _apply_existing(
+            tmp_git_repo, ledger_path, _reject_manifest(IMPLEMENTATION_COVERAGE)
+        )
+        _apply_existing(tmp_git_repo, ledger_path, _reject_manifest(CANDIDATE_EVIDENCE))
+        session = _apply_existing(
+            tmp_git_repo,
+            ledger_path,
+            _reject_manifest(IMPLEMENTATION_COVERAGE_RESTATED),
+        )
+        assert session.pending_judge_action == "revert_green"
+        statuses = _ledger_statuses_path(ledger_path)
+        assert "HITL_PENDING" not in statuses
+
+    def test_unit_integration_layer_flip_is_hitl_not_train(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _red_sha, ledger_path = _seed_green_repo(tmp_git_repo)
+        first = _apply_existing(tmp_git_repo, ledger_path, _reject_manifest(UNIT_LAYER))
+        assert first.pending_judge_action == "revert_green"
+
+        with pytest.raises(HitlEscalationError, match="requirement contradiction"):
+            _apply_existing(
+                tmp_git_repo, ledger_path, _reject_manifest(INTEGRATION_LAYER)
+            )
+
+        session = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
+        assert session.red_attempts == 0
+        statuses = _ledger_statuses_path(ledger_path)
+        assert "HITL_PENDING" in statuses
+        assert "FAILED" not in statuses
 
 
 class TestCycleContradictionStopsBeforeTrainExhausted:

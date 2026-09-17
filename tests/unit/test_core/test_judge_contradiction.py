@@ -59,6 +59,66 @@ The next GREEN attempt must:
 - Correction: Persist the catalog identifier from the provider payload.
 """
 
+VERIFY_CANDIDATE = """\
+The next GREEN attempt must:
+- Requirement: Complete the pre-judge verification for this candidate.
+- Correction: Finish verification of the accepted candidate behavior.
+- Verification: Run the retained verification command and record the result.
+- Boundary: Preserve the RED tests and public interface. Do not expand the acceptance contract.
+"""
+
+VERIFY_CANDIDATE_RESTATED = """\
+The next GREEN attempt must:
+- Requirement: Finish pre-judge verification of this accepted candidate.
+- Correction: Complete verification of the candidate behavior already accepted.
+- Verification: Re-run the retained verification command and keep the recorded result.
+- Boundary: Preserve the RED tests and public interface. Do not expand the acceptance contract.
+"""
+
+REQUIRED_CHANGELOG = """\
+The next GREEN attempt must:
+- Requirement: Add the required changelog entry under Unreleased.
+- Correction: Append the user-visible changelog bullet for this change.
+- Verification: CHANGELOG.md contains the required Unreleased entry.
+- Boundary: Preserve the RED tests and public interface. Do not expand the acceptance contract.
+"""
+
+IMPLEMENTATION_COVERAGE = """\
+The next GREEN attempt must:
+- Requirement: Complete implementation, test, and documentation coverage for the candidate.
+- Correction: Cover the implementation, tests, and documentation named in the task.
+- Verification: Coverage includes implementation, tests, and documentation.
+- Boundary: Preserve the RED tests and public interface. Do not expand the acceptance contract.
+"""
+
+IMPLEMENTATION_COVERAGE_RESTATED = """\
+The next GREEN attempt must:
+- Requirement: Finish implementation, test, and documentation coverage named for the candidate.
+- Correction: Complete the implementation, tests, and documentation coverage in the task.
+- Verification: Coverage still includes implementation, tests, and documentation.
+- Boundary: Preserve the RED tests and public interface. Do not expand the acceptance contract.
+"""
+
+CANDIDATE_EVIDENCE = """\
+The next GREEN attempt must:
+- Requirement: Provide separate candidate-bound test and verification evidence.
+- Correction: Attach candidate-bound test output and verification evidence for this candidate.
+- Verification: Evidence is bound to the candidate and distinct from coverage claims.
+- Boundary: Preserve the RED tests and public interface. Do not expand the acceptance contract.
+"""
+
+UNIT_LAYER = """\
+The next RED attempt must:
+- Requirement: Place the suite under tests/unit.
+- Correction: Author unit tests that mock FastAPI admission.
+"""
+
+INTEGRATION_LAYER = """\
+The next RED attempt must:
+- Requirement: Place the suite under tests/integration.
+- Correction: Author integration tests that exercise HTTP database scheduler paths.
+"""
+
 
 def test_extracts_repair_contract_fields() -> None:
     fields = extract_repair_fields(STRICT_IDENTITY)
@@ -107,6 +167,50 @@ def test_aba_oscillation_is_a_contradiction() -> None:
     )
     assert found is not None
     assert found.kind == "oscillation"
+
+
+def test_additive_verification_and_changelog_aba_is_not_a_contradiction() -> None:
+    assert (
+        detect_judge_requirement_contradiction(
+            [VERIFY_CANDIDATE, REQUIRED_CHANGELOG], VERIFY_CANDIDATE
+        )
+        is None
+    )
+    assert (
+        detect_judge_requirement_contradiction(
+            [REQUIRED_CHANGELOG, VERIFY_CANDIDATE], REQUIRED_CHANGELOG
+        )
+        is None
+    )
+
+
+def test_additive_coverage_and_evidence_aba_is_not_a_contradiction() -> None:
+    assert (
+        detect_judge_requirement_contradiction(
+            [IMPLEMENTATION_COVERAGE, CANDIDATE_EVIDENCE], IMPLEMENTATION_COVERAGE
+        )
+        is None
+    )
+    assert (
+        detect_judge_requirement_contradiction(
+            [CANDIDATE_EVIDENCE, IMPLEMENTATION_COVERAGE], CANDIDATE_EVIDENCE
+        )
+        is None
+    )
+
+
+def test_unit_integration_layer_flip_is_a_contradiction() -> None:
+    found = detect_judge_requirement_contradiction([UNIT_LAYER], INTEGRATION_LAYER)
+    assert found is not None
+    assert found.kind == "layer_flip"
+
+
+def test_aba_unit_integration_layer_still_contradicts() -> None:
+    found = detect_judge_requirement_contradiction(
+        [UNIT_LAYER, INTEGRATION_LAYER], UNIT_LAYER
+    )
+    assert found is not None
+    assert found.kind in {"layer_flip", "oscillation"}
 
 
 def test_explicit_incompatible_fixture_language() -> None:

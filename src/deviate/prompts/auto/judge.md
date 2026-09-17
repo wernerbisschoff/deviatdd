@@ -168,7 +168,7 @@ Verification must distinguish a behavioral assertion failure from setup, import,
 
 Do not cite `path:line` locations from commits the rollback removes.
 Write a durable rewrite contract that remains valid after rollback.
-The runner compares successive rejection Requirement/Correction texts. Mutually incompatible fixture or identity outcomes (strict matching vs preserve a conflicting existing test) escalate to HITL instead of more GREEN/RED training — make each Requirement/Correction a single interpretation. Do not oscillate the test layer: keep Requirement/Correction inside the injected `<layer_lock>`. GH-230 HITL remains the backstop, not a substitute for the lock.
+The runner compares successive rejection Requirement/Correction texts. Mutually incompatible fixture, identity, or test-layer outcomes (strict matching vs preserve a conflicting existing test, requested vs provider identity, or unit↔integration) escalate to HITL instead of more GREEN/RED training — make each Requirement/Correction a single interpretation. Additive corrections (changelog + verification, coverage + evidence) are compatible and must stay in one Requirement/Correction rather than alternating. Do not oscillate the test layer: keep Requirement/Correction inside the injected `<layer_lock>`. GH-230 / GH-253 HITL remains the backstop, not a substitute for the lock.
 Keep operator observations and non-blocking suggestions in `summary`.
 Never include `REFACTOR NOTE:` in rejection feedback. That prefix is reserved for optional advice on a passing verdict.
 

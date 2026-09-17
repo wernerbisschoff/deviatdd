@@ -4780,9 +4780,12 @@ def _halt_judge_requirement_contradiction(
 ) -> NoReturn:
     """Persist the conflicting round and halt for a SPEC / HITL decision.
 
-    Does not roll back or increment GREEN/RED train counters. The rejected
-    GREEN stays inspectable. ``LOOP_DETECTED`` telemetry is unchanged and
-    does not halt on its own.
+    Reached only after ``detect_judge_requirement_contradiction`` finds a
+    semantic conflict (polar identity flip, unit↔integration layer flip,
+    requested vs provider identity oscillation, or explicit incompatibility).
+    Additive restatements still train. Does not roll back or increment
+    GREEN/RED train counters. The rejected GREEN stays inspectable.
+    ``LOOP_DETECTED`` telemetry is unchanged and does not halt on its own.
     """
     tid = str(task.get("id") or "?")
     tasks_md = _resolve_tasks_md(root, task)
@@ -4833,8 +4836,9 @@ def _halt_judge_requirement_contradiction(
             "choose_spec_interpretation": {
                 "patch": (
                     "Pick one interpretation (strict identity matching vs "
-                    "preserve existing fixtures) and correct the conflicting "
-                    "test, fixture, or requirement."
+                    "preserve existing fixtures, or unit vs integration "
+                    "layer) and correct the conflicting test, fixture, or "
+                    "requirement."
                 ),
                 "trade_off": "Stops GREEN/RED training before TRAIN_EXHAUSTED.",
             },

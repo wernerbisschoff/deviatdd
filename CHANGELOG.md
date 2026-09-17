@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Mise tasks use colon names (`test:one`, `verify:cli`, `verify:setup`).** Hyphen spellings remain as aliases. Matches the `mise run test:one` contract already documented in `specs/DeviaTDD-architecture.md`.
 
 ### Fixed
+- **Compatible JUDGE restatements no longer halt as requirement contradictions (GH-253).** A-B-A token similarity now requires a semantic conflict (requested vs provider value for the same returned identity, or a unit↔integration layer flip). Changelog + verification and coverage + evidence remain bounded training. Polar identity flips and explicit conflicts still escalate to `JUDGE_REQUIREMENT_CONTRADICTION`. Pinned by `tests/unit/test_core/test_judge_contradiction.py` and `tests/unit/test_micro/test_judge_contradiction_halt.py`. Specs: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`. ([#253](https://github.com/wernerbisschoff/deviatdd/issues/253))
 - Scoped task verification now reaches pre contracts and agent layer locks unchanged. Stamped unit, integration, and E2E tasks use the same selection as post-agent checks (GH-258).
 - Phase ledger writes remove queue-only dependency metadata before strict record validation. New dependent tasks can complete RED without losing their test strategy (GH-259).
 - Mise verification discovery recognizes string and list task aliases in `mise.toml` and `.mise.toml`. Existing aliases such as `e2e` now resolve instead of failing with `VERIFICATION_UNRESOLVED`.
