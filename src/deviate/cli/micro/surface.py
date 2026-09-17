@@ -74,6 +74,7 @@ from deviate.core.judge_policy import (
     format_violations_as_feedback as _format_violations_as_feedback,  # noqa: F401
     judge_feedback_from_manifest as _judge_feedback_from_manifest,
     strip_revert_line_citations as _strip_revert_line_citations,  # noqa: F401
+    train_feedback_is_advisory as _train_feedback_is_advisory_policy,
     verdict_is_clean_pass as _verdict_is_clean_pass,
     violation_categories as _violation_categories,
 )
@@ -1725,6 +1726,17 @@ def _is_green_train_dump(text: str) -> bool:
     return "<test_output>" in stripped
 
 
+def _train_feedback_is_advisory(feedback: str) -> bool:
+    """True when leftover ``train_feedback`` is REFACTOR advice (GH-260).
+
+    GREEN test dumps are never advisory. A ``REFACTOR NOTE:`` on a clean
+    PASS is injected into REFACTOR and must not retrain GREEN.
+    """
+    if _is_green_train_dump(feedback):
+        return False
+    return _train_feedback_is_advisory_policy(feedback)
+
+
 _NON_TDD_EXECUTION_MODES = frozenset({"EXECUTE", "IMMEDIATE", "DIRECT"})
 _MISSING_REGRESSION_FILES = (
     "without naming regression tests (files and test_file are empty). "
@@ -2280,9 +2292,12 @@ def _run_green_phase(
 ) -> SessionState:
     tid = task.get("id", "?")
     green_already_done = _phase_already_done(ledger_path, task.get("id", ""), "GREEN")
-    is_feedback_retry = green_already_done and bool(session.train_feedback)
+    advisory_note = _train_feedback_is_advisory(session.train_feedback)
+    is_feedback_retry = (
+        green_already_done and bool(session.train_feedback) and not advisory_note
+    )
     if green_already_done:
-        if not session.train_feedback:
+        if not session.train_feedback or advisory_note:
             c.print(f"  [dim]GREEN already done for {_task_label(task)}, skipping[/]")
             return session
         c.print(
@@ -6628,6 +6643,21 @@ def _run_tdd_cycle_impl(
         # path (mechanical / no_failing_test / green suite). Leave the
         # TRAIN retry loop without re-running GREEN.
         if session.pending_judge_action in _NO_FAILING_TEST_FORWARD_ROUTES:
+            judge_passed = True
+            break
+        # GH-260: a leftover REFACTOR NOTE on a clean PASS is advice for
+        # REFACTOR, not a GREEN retrain contract. Restore the forward
+        # route when pending was cleared so skip_refactor / REFACTOR still
+        # run. Spec-gap / test-dump / judge_rejected still train.
+        if not session.judge_rejected and _train_feedback_is_advisory(
+            session.train_feedback
+        ):
+            if session.pending_judge_action not in _NO_FAILING_TEST_FORWARD_ROUTES:
+                session.pending_judge_action = (
+                    "skip_refactor" if no_refactor else "continue_refactor"
+                )
+                _bind_judge_forward_route(session, tid)
+                session.save(session_path)
             judge_passed = True
             break
         if session.judge_rejected or session.train_feedback:

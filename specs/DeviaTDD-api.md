@@ -1329,9 +1329,14 @@ Tasks without assigned AC references retain the previous full-context behavior. 
     unchanged on a clean pass even when evidence quotes fail the substring
     gate (GH-185); it does not log `JUDGE_EVIDENCE_REJECTED` and does not
     rewrite to `revert_green`. Omitted / ignored-revert pass actions default to
-    `continue_refactor`, or `skip_refactor` when `--no-refactor`. The note is
+    `continue_refactor`, or `skip_refactor` when `--no-refactor`.     The note is
     injected into the REFACTOR `{train_feedback}` placeholder; it is not sent
-    as GREEN/RED train feedback. After GREEN PASS (empty `session.failure_kind`),
+    as GREEN/RED train feedback. A leftover `REFACTOR NOTE:` on
+    `session.train_feedback` after a clean PASS is not a GREEN retrain
+    contract (GH-260): the TDD train loop and `_run_green_phase`
+    (`GREEN` already done + leftover feedback) ignore advisory notes and
+    advance to REFACTOR or `skip_refactor` COMPLETED. Spec-gap /
+    test-dump / `judge_rejected` feedback still trains. After GREEN PASS (empty `session.failure_kind`),
     a `COMPLIANCE_VIOLATION` with structured Test Integrity
     (`violations[].category` matching Test Integrity / `Test Integrity Violation`,
     and/or `evaluation.test_integrity: FAIL`) uses `red_baseline_integrity` to select rollback scope.

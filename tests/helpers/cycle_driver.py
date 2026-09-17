@@ -503,6 +503,26 @@ def skip_refactor_steps(task_id: str, *, ac: str) -> list[CycleStep]:
     ]
 
 
+def gh260_pass_note_skip_refactor_steps(task_id: str, *, ac: str) -> list[CycleStep]:
+    """GH-260: COMPLIANCE_PASS + REFACTOR NOTE + skip_refactor completes."""
+    return [
+        CycleStep(
+            phase="RED", handover=red_handover_yaml(task_id), files=red_files(task_id)
+        ),
+        CycleStep(
+            phase="GREEN",
+            handover=green_handover_yaml(task_id),
+            files=green_files(task_id),
+        ),
+        CycleStep(
+            phase="JUDGE",
+            handover=judge_pass_plus_note_yaml(
+                task_id, ac=ac, next_action="skip_refactor"
+            ),
+        ),
+    ]
+
+
 def _write_files(root: Path, files: Mapping[str, str] | None) -> None:
     if not files:
         return

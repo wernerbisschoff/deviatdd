@@ -18,6 +18,7 @@ from tests.helpers.cycle_driver import (
     _UNUSED_IMPORT_NOTE,
     CycleTask,
     gh158_steps,
+    gh260_pass_note_skip_refactor_steps,
     happy_path_steps,
     poison_stale_skip_refactor,
     run_scripted_cycle,
@@ -152,6 +153,49 @@ class TestViolationRefactorNoteKeepsGreen:
         assert _UNUSED_IMPORT_NOTE in result.session.train_feedback, (
             f"{mode}: REFACTOR train_feedback must keep the unused-import "
             f"note; got {result.session.train_feedback!r}"
+        )
+
+
+@pytest.mark.parametrize("mode", ["auto", "manual"])
+class TestGh260PassNoteSkipRefactor:
+    """COMPLIANCE_PASS + advisory REFACTOR NOTE + skip_refactor must
+    COMPLETE once, not retrain GREEN until TRAIN_EXHAUSTED."""
+
+    def test_pass_plus_note_skip_refactor_completes_without_retrain(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        mode: str,
+    ) -> None:
+        seeded = seed_cycle_repo(tmp_git_repo, tasks=[_TASK_A])
+        result = run_scripted_cycle(
+            seeded,
+            gh260_pass_note_skip_refactor_steps(_TASK_A.task_id, ac=_TASK_A.ac),
+            monkeypatch,
+            mode=mode,  # type: ignore[arg-type]
+        )
+        _assert_no_reject(result)
+        assert "TRAIN_EXHAUSTED" not in result.output, result.output
+        assert result.error is None, (
+            f"{mode}: GH-260 skip_refactor + note must not raise; "
+            f"got {result.error!r}\n{result.output}"
+        )
+        assert result.phases == ["RED", "GREEN", "JUDGE"], (
+            f"{mode}: expected RED→GREEN→JUDGE complete (no extra GREEN); "
+            f"got {result.phases!r}\n{result.output}"
+        )
+        assert result.phases.count("GREEN") == 1, (
+            f"{mode}: advisory REFACTOR NOTE must not retrain GREEN; "
+            f"got {result.phases!r}\n{result.output}"
+        )
+        statuses = result.statuses_for(_TASK_A.task_id)
+        assert statuses[-1] == "COMPLETED", (
+            f"{mode}: skip_refactor + note must COMPLETE; "
+            f"got {statuses!r}\n{result.output}"
+        )
+        assert "FAILED" not in statuses, (
+            f"{mode}: must not mark FAILED/TRAIN_EXHAUSTED; "
+            f"got {statuses!r}\n{result.output}"
         )
 
 
