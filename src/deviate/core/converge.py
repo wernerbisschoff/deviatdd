@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 from deviate.core.validation import format_task_id
 from deviate.core.commit import stage_and_commit
+from deviate.core.prune import apply_prune, build_prune_plan
 from deviate.core.convention import format_commit_message
 from deviate.core.issues import resolve_issue_artifact_path
 from deviate.core.review_coverage import (
@@ -276,6 +277,7 @@ def apply_findings(
 ) -> ConvergeApplyResult:
     ordered_findings = sort_findings(findings)
     if not ordered_findings:
+        finalize_convergence(root)
         return ConvergeApplyResult(status="CONVERGED")
     issue_id = resolve_converge_issue_id(root)
     tasks_path = resolve_issue_tasks_path(root, issue_id)
@@ -339,6 +341,30 @@ def apply_findings(
         repo=root,
     )
     return ConvergeApplyResult(status="APPENDED", task_ids=ids, phase=phase)
+
+
+def finalize_convergence(root: Path) -> None:
+    """Remove completed Meso artifacts and thin issue-owned spy tests."""
+    issue_id = resolve_converge_issue_id(root)
+    source = _latest_source_file(root, issue_id) if issue_id else None
+    if not issue_id or not source:
+        return
+    apply_prune(root, build_prune_plan(root, issue_id))
+    issue_dir = resolve_issue_artifact_path(root, source, "plan.md").parent
+    deleted = [
+        p for p in (issue_dir / "plan.md", issue_dir / "tasks.md") if p.is_file()
+    ]
+    if not deleted:
+        return
+    for path in deleted:
+        path.unlink()
+    stage_and_commit(
+        message=format_commit_message(
+            "chore(converge): remove completed Meso artifacts", root, phase="converge"
+        ),
+        files=deleted,
+        repo=root,
+    )
 
 
 def run_converge_pass(root: Path) -> str:

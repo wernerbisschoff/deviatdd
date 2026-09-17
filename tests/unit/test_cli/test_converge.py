@@ -271,35 +271,29 @@ class TestConvergePre:
 
 
 class TestConvergePost:
-    def test_empty_findings_leaves_tasks_byte_unchanged(
-        self, tmp_git_repo: Path
-    ) -> None:
-        _, _, tasks = _seed_issue(tmp_git_repo)
-        assert tasks is not None
-        before = tasks.read_bytes()
+    def test_empty_findings_removes_meso_artifacts(self, tmp_git_repo: Path) -> None:
+        _, plan, tasks = _seed_issue(tmp_git_repo)
+        assert plan is not None and tasks is not None
 
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["converge", "post", '{"findings":[]}'])
 
         assert result.exit_code == 0, result.stdout
-        payload = json.loads(result.stdout)
-        assert payload["status"] == "CONVERGED"
-        assert tasks.read_bytes() == before
-        assert "Phase" not in tasks.read_text(encoding="utf-8") or (
-            "## Phase 2: Convergence" not in tasks.read_text(encoding="utf-8")
-        )
+        assert json.loads(result.stdout)["status"] == "CONVERGED"
+        assert not plan.exists()
+        assert not tasks.exists()
 
     def test_omitted_findings_is_clean_no_op(self, tmp_git_repo: Path) -> None:
-        _, _, tasks = _seed_issue(tmp_git_repo)
-        assert tasks is not None
-        before = tasks.read_bytes()
+        _, plan, tasks = _seed_issue(tmp_git_repo)
+        assert plan is not None and tasks is not None
 
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["converge", "post"])
 
         assert result.exit_code == 0, result.stdout
         assert json.loads(result.stdout)["status"] == "CONVERGED"
-        assert tasks.read_bytes() == before
+        assert not plan.exists()
+        assert not tasks.exists()
 
     def test_missing_finding_appends_convergence_phase(
         self, tmp_git_repo: Path

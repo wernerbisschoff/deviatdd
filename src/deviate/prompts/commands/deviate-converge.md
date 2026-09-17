@@ -96,7 +96,7 @@ Request review and removal, or replacement with a public behavior test when it p
 Include the relevant plan or task reference in the summary and require the affected tests to pass.
 Do not report CONVERGED while leftover spy tests remain.
 Do not delete tests during assessment. Do not invoke `/deviate-prune` automatically.
-Use `deviate converge post` to append cleanup tasks. Reassess after Micro completes those tasks.
+Use `deviate converge post` to append only required gap tasks. Group duplicate or overlapping findings. Reassess after Micro completes those tasks.
 
 ## Write set
 
@@ -132,13 +132,11 @@ If ownership or required scope is unclear, ask the operator before appending tas
 Do not create a new issue automatically. Include evidence, the scope reason, and a proposed acceptance check in the suggestion.
 Epic closeout is a separate review after constituent issues complete; do not assess epic-wide completeness in this issue's Converge.
 
-After a clean assessment, emit this non-blocking reminder with the resolved issue artifact paths:
-- Before MR, review retention of this issue's `plan.md`, `tasks.md`, and `tasks.jsonl` after final approval.
-- Keep these artifacts during Converge and Micro. Current policy protects them; this reminder does not authorize deletion.
-- Never delete or rewrite the append-only ledger. Any retention change requires explicit governance approval.
-
+After a clean assessment, `deviate converge post '{"findings":[]}'` removes this issue's `plan.md` and `tasks.md`, and prunes issue-owned spy tests. It must not delete any `tasks.jsonl` ledger.
+Do not include cleanup in findings. Cleanup runs only after post adds no tasks.
 Do not include follow-ups or reminders in the `findings` payload. They do not prevent CONVERGED.
-Do not append artifact-deletion tasks or remove artifacts.
+Do not append speculative, duplicate, or out-of-scope tasks.
+Never delete or rewrite the append-only ledger.
 
 ## Steps
 
