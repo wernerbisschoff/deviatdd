@@ -851,11 +851,14 @@ Tasks without assigned AC references retain the previous full-context behavior. 
   `[tasks.format]` is defined. Missing mise returns exit 127 without raising
   (`FileNotFoundError` is not a phase failure); a missing format task is a
   no-op. Non-zero format is a warning on `red post`, never a phase gate.
-  Optional ``--task-id`` is compared to the resolved pending record
-  (``session.active_issue_id`` → first PENDING) **before** the ledger transition
-  and commit. Mismatch prints ``TASK_ID_MISMATCH`` and exits 1 with no ledger
-  write and no commit. Match, or an omitted ``--task-id``, keeps the existing
-  post behavior.
+  Optional ``--task-id`` is resolved **before** verification, ledger
+  transition, and commit. A matching PENDING or FAILED record (the same
+  task ``red pre --task`` can allocate after TRAIN_EXHAUSTED) is the post
+  target — post does not fall through to the next PENDING card. When
+  ``--task-id`` is omitted, the resolver uses ``session.active_issue_id``
+  → first PENDING or FAILED. Mismatch against that resolved record prints
+  ``TASK_ID_MISMATCH`` and exits 1 with no ledger write and no commit.
+  Match, or an omitted ``--task-id``, keeps the existing post behavior.
   `deviate micro run`'s internal RED phase (`_run_red_phase`) applies the same contract: when the
   test command exits 0 (all tests passed), collects no tests (pytest exit 5), or resolves to no
   command at all (returncode 127), it does NOT die — it routes the decision to JUDGE

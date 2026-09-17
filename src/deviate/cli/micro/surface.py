@@ -1504,12 +1504,53 @@ def _resolve_latest_task(
     return latest
 
 
+_RED_POST_RESUMABLE_STATUSES = frozenset({"PENDING", "FAILED"})
+
+
 def _resolve_first_pending(root: Path, issue_id: str) -> tuple[dict, Path] | None:
-    """Return the first task whose latest status is PENDING for *issue_id*."""
+    """Return the first PENDING or FAILED task for *issue_id*."""
     for rec, ledger_file in _find_all_pending_tasks(root, issue_id=issue_id):
-        if rec.get("status") == "PENDING":
+        if rec.get("status") in _RED_POST_RESUMABLE_STATUSES:
             return (rec, ledger_file)
     return None
+
+
+def _lookup_red_post_task(
+    root: Path, task_id: str, ledger_hint: Path | None = None
+) -> tuple[dict, Path] | None:
+    """Return a PENDING or FAILED record for *task_id*, if one exists."""
+    found = _find_task_record(root, task_id)
+    if found is not None and found[0].get("status") in _RED_POST_RESUMABLE_STATUSES:
+        return found
+    if ledger_hint is None:
+        return None
+    latest: dict | None = None
+    for rec in _read_ledger_records(ledger_hint):
+        if rec.get("id") == task_id:
+            latest = rec
+    if latest is not None and latest.get("status") in _RED_POST_RESUMABLE_STATUSES:
+        return (latest, ledger_hint)
+    return None
+
+
+def _resolve_red_post_task(
+    root: Path,
+    issue_id: str,
+    expected_task_id: str,
+    ledger_hint: Path | None = None,
+) -> tuple[dict, Path] | None:
+    """Resolve the RED post target, honoring ``--task-id`` including FAILED.
+
+    An explicit ``--task-id`` that names a PENDING or FAILED record wins over
+    first-queue selection so ``red post`` can finish the task ``red pre``
+    allocated after TRAIN_EXHAUSTED. Otherwise fall back to the first
+    PENDING or FAILED card for the active issue.
+    """
+    if expected_task_id:
+        pinned = _lookup_red_post_task(root, expected_task_id, ledger_hint)
+        if pinned is not None:
+            return pinned
+    return _resolve_first_pending(root, issue_id)
 
 
 def _build_scope(issue_id: str, task_id: str) -> str:
@@ -8538,7 +8579,13 @@ def _red_post_kernel(
     early_session = (
         SessionState.load(session_path) if session_path.exists() else SessionState()
     )
-    pending_for_cmd = _resolve_first_pending(root, early_session.active_issue_id or "")
+    expected_task_id = (task_id or "").strip()
+    pending_for_cmd = _resolve_red_post_task(
+        root,
+        early_session.active_issue_id or "",
+        expected_task_id,
+        ledger_hint,
+    )
     proc = _run_test_cmd(root, pending_for_cmd[0] if pending_for_cmd else None)
     if proc.returncode == 127 and "No test command" in (proc.stderr or ""):
         raise KernelError(
@@ -8557,23 +8604,14 @@ def _red_post_kernel(
             console.print(f"[yellow]Format stdout:[/] {fmt.stdout.strip()}")
     session = early_session
     issue_id = session.active_issue_id or ""
-    pending = (
-        pending_for_cmd
-        if pending_for_cmd is not None
-        else _resolve_first_pending(root, issue_id)
-    )
-    expected_task_id = (task_id or "").strip()
+    pending = pending_for_cmd
     if pending is None and expected_task_id:
-        found = _find_task_record(root, expected_task_id)
-        if found is not None and found[0].get("status") == "PENDING":
-            pending = found
-    if pending is None and expected_task_id and ledger_hint is not None:
-        for rec in _read_ledger_records(ledger_hint):
-            if rec.get("id") == expected_task_id and rec.get("status") == "PENDING":
-                pending = (rec, ledger_hint)
-                break
+        pending = _lookup_red_post_task(root, expected_task_id, ledger_hint)
     if pending is None:
-        raise KernelError("NO_PENDING_TASKS", "No PENDING task found for active issue")
+        raise KernelError(
+            "NO_PENDING_TASKS",
+            "No PENDING or FAILED task found for active issue",
+        )
     pending_record, ledger_path = pending
     task_uuid = pending_record.get("id", "")
     if expected_task_id and expected_task_id != task_uuid:
@@ -9754,7 +9792,7 @@ def red_post(
     task_id: str | None = typer.Option(
         None,
         "--task-id",
-        help="Expected pending task ID to transition",
+        help="Expected PENDING or FAILED task ID to transition",
     ),
 ) -> None:
     root = Path.cwd()

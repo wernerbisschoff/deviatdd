@@ -28,8 +28,10 @@ There is no separate feedback injection in manual mode.
 3. Execute the RED (test-writing) work described in the core body (`auto/red.md`).
 4. Run `deviate red post --task-id {TASK_ID}` after the tests are verified
    failing. The command stages the test files, verifies them failing, updates
-   the task ledger, and commits. A mismatch with the resolved pending task
-   exits `TASK_ID_MISMATCH` with no ledger write and no commit.
+   the task ledger, and commits. The post target is the PENDING or FAILED
+   task allocated by `red pre` (a FAILED task remains recoverable). A
+   mismatch with that resolved task exits `TASK_ID_MISMATCH` with no ledger
+   write and no commit.
 
 ### Rich Handover Manifest
 
