@@ -160,6 +160,31 @@ def feedback_is_refactor_only(feedback: str) -> bool:
     return bool(_REFACTOR_ONLY_BODY_RE.match(text))
 
 
+def train_feedback_is_advisory(feedback: str) -> bool:
+    """Return true when leftover feedback is REFACTOR advice, not a retrain.
+
+    A clean PASS may keep ``REFACTOR NOTE:`` style/polish text on
+    ``session.train_feedback`` for the REFACTOR prompt (GH-158). That
+    leftover is not a GREEN/RED contract (GH-260). Spec-gap retries,
+    ``COMPLIANCE_FAIL`` / ``COMPLIANCE_VIOLATION`` bodies, and
+    ``The next GREEN/RED attempt must:`` instructions still train.
+    """
+    text = coerce_feedback_text(feedback).strip()
+    if not text:
+        return False
+    if feedback_is_refactor_only(text):
+        return True
+    extracted = extract_refactor_note(text)
+    if not extracted:
+        return False
+    if _RETRY_INSTRUCTION_RE.search(text):
+        return False
+    upper = text.upper()
+    if upper.startswith("COMPLIANCE_VIOLATION") or upper.startswith("COMPLIANCE_FAIL"):
+        return False
+    return feedback_is_refactor_only(extracted)
+
+
 def violation_categories(manifest: HandoverManifest) -> list[str]:
     """Return category strings from the manifest violations."""
     violations = _manifest_field(manifest, "violations")
