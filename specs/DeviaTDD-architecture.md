@@ -752,7 +752,8 @@ DeviaTDD's current implementation (`src/deviate/cli/micro.py`) runs tests throug
 language-agnostic `_run_test_cmd()` → `_resolve_verification_rungs()` (runner ladder) plus
 `_resolve_verification_command()` / `_layer_contract_fields()` (injected layer). `deviate
 red|green|refactor pre` and `_build_auto_prompt` inject `test_strategy`, `test_write_dir`,
-and `test_command` (this layer only: `mise unit` / `mise integration` / `mise e2e`; never
+and `test_command` (scoped declared verification when partial; otherwise
+this layer only: `mise unit` / `mise integration` / `mise e2e`; never
 `mise integ` when `mise integration` exists). Auto RED/GREEN/JUDGE prompts also receive
 an immutable `<layer_lock>` stamp of those three fields. The lock outranks JUDGE
 `train_feedback` that names a different layer so an integration-stamped task cannot be
