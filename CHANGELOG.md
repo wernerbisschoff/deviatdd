@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- JUDGE can explicitly request human resolution for conflicting requirements or other blockers. Micro preserves work and stops with `HITL_PENDING`, without rollback or automatic retries.
+
 ### Added
 
 - **Opt-in Converge pack (`ISS-ADH-058` / #219).** `deviate setup --packs converge` installs `/deviate-converge` plus `deviate converge pre|post` (same class as `pr` / `review` / `walkthrough`; not in default setup). After this issue's Micro drain and before PR, Converge assesses present-state code against this issue brief/AO, `plan.md` AC-PLAN, `tasks.md`, and filled constitution MUST. Gaps append `## Phase N: Convergence` and PENDING `TSK-*` via `append_task_record`; a clean run leaves `tasks.md` byte-unchanged and reports `CONVERGED`. `deviate run` continues into that tail when the pack is installed or `--converge` is passed, re-draining Micro until clean. The `deviatdd` skill drives `deviate run` until happy/converged; walkthrough, review, and PR stay outside that loop. Specs: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`.

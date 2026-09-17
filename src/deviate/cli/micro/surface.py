@@ -4590,6 +4590,8 @@ def _run_judge_phase(
             raise PhaseFailedError(
                 f"JUDGE phase agent error for {tid}: agent returned no manifest{detail}"
             )
+        if _is_hitl_escalation(manifest):
+            break
         schema_errors = _judge_manifest_schema_errors(manifest)
         if not schema_errors:
             break
@@ -4858,6 +4860,16 @@ def _apply_judge_verdict(
     ``HitlEscalationError`` (GH-230) instead of consuming more train budget.
     """
     tid = task.get("id", "?")
+    if _is_hitl_escalation(manifest):
+        reason = manifest.summary or "JUDGE requires human resolution"
+        session.train_feedback = reason
+        session.judge_rejected = True
+        session.save(session_path)
+        _render_hitl_banner(manifest, c, tid, "JUDGE")
+        _append_status_transition(task, "HITL_PENDING", ledger_path, reason=reason)
+        raise HitlEscalationError(
+            f"JUDGE requires human resolution for {tid}: {reason}"
+        )
     schema_errors = _judge_manifest_schema_errors(manifest)
     if schema_errors:
         _log_run(

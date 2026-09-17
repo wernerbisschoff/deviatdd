@@ -110,6 +110,25 @@ Map each Security-scan finding to a named baseline: OWASP Top 10 / NIST SSDF; OW
 
 ### STEP_3: EMIT_VERDICT
 
+If requirements conflict or no correction is possible without a human decision, stop immediately.
+Do not choose an interpretation, emit a passing verdict, or request another RED/GREEN attempt.
+Emit this handover instead; omit `verdict`, `next_action`, and compliance evidence:
+
+```yaml
+phase: JUDGE
+status: ERROR
+task_id: "{TASK_ID}"
+summary: "Human decision required: describe the blocker."
+rationale: "Cite the conflicting requirements and explain why both cannot be satisfied."
+contract_drift:
+  side_a: "First requirement with source reference."
+  side_b: "Conflicting requirement with source reference."
+escalates_to: operator
+```
+
+The runner preserves the work, records `HITL_PENDING`, and stops without retries or rollback.
+The human must correct the requirements or artifacts before explicitly resuming the run.
+
 Emit `COMPLIANCE_PASS` only when citations match the injected `<diff>` or inspected current task files and no violation exists. Use HEAD for unchanged files; inspect the working tree when uncommitted changes exist. Emit `COMPLIANCE_VIOLATION` only for a confirmed category above.
 
 The runner removes the rejected commit set before the next agent runs.

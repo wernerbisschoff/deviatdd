@@ -30,6 +30,13 @@ Manual mode: run the scripts yourself.
 
 ### Rich Handover Manifest
 
+Conflicting requirements or blockers requiring human decisions must stop the run immediately.
+Emit `phase: JUDGE`, `status: ERROR`, `summary`, and a concrete `rationale` citing the conflicting sources.
+Include `contract_drift: {side_a: "requirement and source", side_b: "conflicting requirement and source"}` and `escalates_to: operator`.
+Omit `verdict`, `next_action`, and compliance evidence. Do not guess an interpretation or request another training attempt.
+`deviate judge post` preserves work, records `HITL_PENDING`, and stops without retries or rollback.
+The human must correct the requirements or artifacts before explicitly resuming.
+
 Emit this manifest: `evidence` is a list of objects
 with `ac: "AC-PLAN-NNN"` (plan-owned Gherkin — not `AO-*`, not bare
 `AC-NN`) plus `test_path` / `test_quote` / `impl_path` / `impl_quote`.

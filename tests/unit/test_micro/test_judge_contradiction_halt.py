@@ -142,3 +142,65 @@ class TestCycleContradictionStopsBeforeTrainExhausted:
         assert result.phases.count("JUDGE") == 2
         assert "HITL_PENDING" in result.ledger_statuses
         assert "FAILED" not in result.ledger_statuses
+
+
+def test_judge_can_request_human_resolution(tmp_git_repo: Path) -> None:
+    _, ledger_path = _seed_green_repo(tmp_git_repo)
+    manifest = HandoverManifest.model_construct(
+        phase="JUDGE",
+        status="ERROR",
+        summary="The acceptance criteria require incompatible outcomes.",
+        contract_drift={"side_a": "Accept empty input", "side_b": "Reject empty input"},
+        escalates_to="operator",
+    )
+    preserved = tmp_git_repo / "human-review.txt"
+    preserved.write_text("Keep this work", encoding="utf-8")
+
+    with pytest.raises(HitlEscalationError, match="JUDGE"):
+        _apply_existing(tmp_git_repo, ledger_path, manifest)
+
+    assert preserved.read_text(encoding="utf-8") == "Keep this work"
+    assert "HITL_PENDING" in _ledger_statuses_path(ledger_path)
+
+
+def test_explicit_judge_escalation_stops_cycle(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task = CycleTask(
+        task_id="TSK-160-01", description="Resolve conflict", ac="AC-PLAN-001"
+    )
+    seeded = seed_cycle_repo(tmp_git_repo, tasks=[task])
+    steps = [
+        CycleStep(
+            phase="RED",
+            handover=red_handover_yaml(task.task_id),
+            files=red_files(task.task_id),
+        ),
+        CycleStep(
+            phase="GREEN",
+            handover=green_handover_yaml(task.task_id),
+            files=green_files(task.task_id),
+        ),
+        CycleStep(
+            phase="JUDGE",
+            handover=f"""
+phase: JUDGE
+status: ERROR
+task_id: {task.task_id}
+summary: Conflicting acceptance criteria require a human decision.
+rationale: One criterion requires acceptance; another requires rejection.
+contract_drift:
+  side_a: Accept empty input
+  side_b: Reject empty input
+escalates_to: operator
+""",
+        ),
+    ]
+    result = run_scripted_cycle(seeded, steps, monkeypatch, mode="auto")
+    assert isinstance(result.error, HitlEscalationError), result.output
+    assert result.phases == ["RED", "GREEN", "JUDGE"]
+    assert "HITL_PENDING" in result.ledger_statuses
+    assert "FAILED" not in result.ledger_statuses
+    assert result.session is not None
+    assert result.session.red_attempts == 0
+    assert result.session.green_attempts == 1

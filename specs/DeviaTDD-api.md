@@ -2067,6 +2067,14 @@ This guidance applies to automatic and installed manual prompts. It adds no sche
 
 #### JUDGE `next_action` Routing Table
 
+JUDGE can request human resolution immediately, without waiting for contradictory successive verdicts.
+Emit `status: ERROR`, `summary`, concrete `rationale`, and `contract_drift`, `escalates_to`, or `hitl_options`.
+For conflicts, `contract_drift.side_a` and `side_b` identify both requirements and their sources.
+Omit `verdict`, `next_action`, and compliance evidence for this escalation.
+Automatic JUDGE and `judge post` record `HITL_PENDING` and raise `HitlEscalationError` before verdict routing.
+The runner preserves work and stops the micro chain without rollback, automatic retries, or training-budget consumption.
+The human corrects the requirements or artifacts before explicitly resuming.
+
 `HandoverManifest.next_action` (`src/deviate/core/agent.py`) carries the JUDGE agent's
 decision on how to route the runner. Five values. TDD `_run_judge_phase` runs a
 mechanical evidence gate on forward PASS routes (`continue_refactor`,
