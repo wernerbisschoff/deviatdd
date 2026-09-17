@@ -819,7 +819,9 @@ Tasks without assigned AC references retain the previous full-context behavior. 
   Resolution order: (1) if the declared verification is **partial** (a file,
   `-k` / `--keyword`, or node id) and the repo has `mise.toml` / `.mise.toml`, wrap it as
   `mise exec -- <declared>` so the command still uses the repo `.venv`; never expand a partial run
-  into `mise test` / `mise unit` / `mise e2e`; (2) **injected layer command** is this task's
+  into `mise test` / `mise unit` / `mise e2e`. Pre JSON, agent layer locks, and post-agent
+  verification use that same scoped command, including stamped tasks (GH-258).
+  (2) For unscoped verification, the **injected layer command** is this task's
   named mise task only (`mise unit` / `mise integration` / `mise e2e`; prefer `integration`
   over the `integ` alias). The **runner ladder** (exists = allowlisted
   mise task, or conventional `tests/unit` / `tests/integration` / `tests/e2e` when no mise) is:
@@ -832,6 +834,8 @@ Tasks without assigned AC references retain the previous full-context behavior. 
   directories exist, else the declared Verification if it is already scoped. Pre JSON also lists
   the allowlisted tasks that exist
   (`doctor`, `test`, `unit`, `integ`/`integration`, `e2e`) and does not dump unrelated mise tasks.
+  Task discovery includes string and list `alias` values in `mise.toml` and `.mise.toml`.
+  For example, `[tasks."test:e2e"]` with `alias = "e2e"` supplies the existing `mise e2e` rung.
   When `[tasks.doctor]` exists, the runner and pre run `mise doctor` only for rungs this task
   actually runs (integ / e2e / unstamped full suite — not a unit-stamped `mise unit` task).
   Doctor failure is `ENV_NOT_READY` — not RED established, GREEN fail, or
@@ -977,10 +981,16 @@ Tasks without assigned AC references retain the previous full-context behavior. 
 * **Source:** `src/deviate/cli/micro.py`
 * **Description:** DIRECT execution mode for `direct`/`immediate`-typed tasks — boilerplate, config, asset syncs, trivial fixes, or refactors with existing test coverage. Bypasses the RED phase entirely. Emits JSON contract with completion criteria; the agent runs once and the result is committed.
 
-#### `deviate execute post [<manifest>]`
+#### `deviate execute post [<task-id>] [<subject>] [<body>]`
 
 * **Source:** `src/deviate/cli/micro.py`
-* **Description:** Validates manifest, then runs `_run_execute_phase()` which invokes the EXECUTE agent and follows with a JUDGE pass against `spec.md`. On `COMPLIANCE_VIOLATION`, `_execute_rollback()` resets the implementation and the phase is retried with `<train_feedback>` injected (up to `max_judge_attempts = 3`). The EXECUTE → JUDGE → EXECUTE iteration mirrors the Green → Judge → Green loop in shape but skips the RED boundary: the EXECUTE phase is allowed to start from any clean working tree and the JUDGE pass evaluates the diff post-hoc. Exhaustion raises `PhaseFailedError`. The task is marked `COMPLETED` only on `COMPLIANCE_PASS` (including `skip_refactor` / `JUDGE_SKIP`). The implementation is committed at the EXECUTE boundary (`feat({scope}): EXECUTE phase - {tid}`, or a clean-tree no-op). The COMPLETED `tasks.jsonl` row is committed afterwards via `_commit_completed_ledger` (`chore({scope}): mark COMPLETED in ledger`) so skip_refactor and VERIFY-with-no-diff paths do not leave the ledger dirty (GH-231).
+* **Manual completion:** Resolves the task through the same lookup as `execute pre`, including pending cards without ledger rows.
+  It appends the COMPLETED transition before committing the implementation and ledger.
+  An unknown explicit ID fails without committing. Without an ID, it resolves the pending task from the active issue.
+* **Automatic execution:** `micro run` uses `_run_execute_phase()` to invoke EXECUTE and then JUDGE against `spec.md`.
+  On `COMPLIANCE_VIOLATION`, it rolls back and retries with `<train_feedback>`, up to three JUDGE attempts.
+  Exhaustion raises `PhaseFailedError`. Only a passing JUDGE verdict permits automatic completion.
+  The implementation commit precedes JUDGE. `_commit_completed_ledger` then commits the COMPLETED row separately (GH-231).
 
 #### `deviate e2e pre`
 
@@ -1345,6 +1355,9 @@ Tasks without assigned AC references retain the previous full-context behavior. 
   instead of jumping to a later PENDING card (GH-246). A later card whose
   `**Dependency**` ids are not all `COMPLETED` is not dispatched;
   `PREREQUISITE_FAILED` exits `1` when every remaining card is blocked.
+  Queue-only `depends_on` stays available for dispatch checks. Phase persistence removes
+  that field before strict `TaskRecord` validation, preserving the task's layer metadata.
+  Other unknown fields remain invalid; persisted ledger records keep their schema (GH-259).
   `COMPLETED` and `CHECKPOINT_FAILED` still skip. Each task gets up to
   **2 retry attempts** (`_execute_task_with_retry`, `for attempt in
   range(2)`) before being marked `FAILED` in the issue-scoped

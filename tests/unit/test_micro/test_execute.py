@@ -293,3 +293,63 @@ class TestExecutePost:
             completed_record = json.loads(ledger_lines[1])
             assert completed_record["status"] == "COMPLETED"
             assert completed_record["id"] == "TSK-004-04"
+
+    def test_execute_post_completes_task_from_markdown_without_ledger(
+        self, tmp_git_repo: Path
+    ):
+        with chdir(tmp_git_repo):
+            spec_dir = Path("specs/001-feature/004-direct")
+            spec_dir.mkdir(parents=True)
+            Path("specs/issues.jsonl").write_text(
+                json.dumps(
+                    {
+                        "issue_id": "001-004",
+                        "source_file": "specs/001-feature/issues/004-direct.md",
+                    }
+                )
+                + "\n"
+            )
+            (spec_dir / "tasks.md").write_text(
+                "# Tasks\n\n- TSK-004-01: document verification\n  - **Mode**: DIRECT\n"
+            )
+            Path(".deviate").mkdir()
+            SessionState(active_issue_id="001-004").save(Path(".deviate/session.json"))
+            pre = runner.invoke(cli, ["execute", "pre", "--task", "TSK-004-01"])
+            assert pre.exit_code == 0, pre.output
+            ledger = spec_dir / "tasks.jsonl"
+            assert not ledger.exists()
+            Path("verification.md").write_text("Verified.\n")
+
+            result = runner.invoke(cli, ["execute", "post", "TSK-004-01"])
+
+            assert result.exit_code == 0, result.output
+            assert ledger.exists(), "Successful EXECUTE must record completion"
+            completed = json.loads(ledger.read_text().splitlines()[-1])
+            assert completed["id"] == "TSK-004-01"
+            assert completed["issue_id"] == "001-004"
+            assert completed["status"] == "COMPLETED"
+
+    def test_execute_post_rejects_unknown_task_without_committing(
+        self, tmp_git_repo: Path
+    ):
+        with chdir(tmp_git_repo):
+            Path("notes.md").write_text("Do not commit an unknown task.\n")
+            subprocess.run(
+                ["git", "add", "notes.md"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+
+            result = runner.invoke(cli, ["execute", "post", "TSK-999-99"])
+
+            assert result.exit_code == 1, result.output
+            staged = subprocess.run(
+                ["git", "diff", "--cached", "--name-only"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            assert staged.stdout.strip() == "notes.md"

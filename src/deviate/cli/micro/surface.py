@@ -2355,7 +2355,7 @@ def _run_green_phase(
             )
             _render_hitl_banner(manifest, c, tid, "GREEN")
             try:
-                record = TaskRecord.model_validate(task)
+                record = _ledger_task_record(task)
                 record.status = "HITL_PENDING"
                 append_task_transition(record, ledger_path)
             except Exception as e:
@@ -5778,6 +5778,13 @@ def _is_foreign_on_branch_boundary(root: Path, sha: str, task_id: str) -> bool:
     return _is_ancestor(root, stripped, "HEAD")
 
 
+def _ledger_task_record(task: dict) -> TaskRecord:
+    """Keep queue dependencies out of the strict append-only record schema."""
+    return TaskRecord.model_validate(
+        {key: value for key, value in task.items() if key != "depends_on"}
+    )
+
+
 def _ensure_red_ledger_transition(
     task: dict,
     ledger_path: Path,
@@ -5795,11 +5802,11 @@ def _ensure_red_ledger_transition(
     if latest == "RED":
         return
     try:
-        record = TaskRecord.model_validate({**task, "status": "RED"})
+        record = _ledger_task_record({**task, "status": "RED"})
     except Exception:
         found = _find_task_record(root, tid) if root is not None else None
         try:
-            record = TaskRecord.model_validate(
+            record = _ledger_task_record(
                 {**(found[0] if found is not None else task), "status": "RED"}
             )
         except Exception:
@@ -6884,7 +6891,7 @@ def _run_execute_phase(
 
     c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
     try:
-        record = TaskRecord.model_validate(task)
+        record = _ledger_task_record(task)
         record.status = "COMPLETED"
         append_task_transition(record, ledger_path)
     except Exception as e:
@@ -8383,7 +8390,7 @@ def _seed_unseen_task_basis(
     status = task.get("status")
     seed_status = status if status in acceptable else canonical
     try:
-        seed = TaskRecord.model_validate({**task, "status": seed_status})
+        seed = _ledger_task_record({**task, "status": seed_status})
         append_task_transition(seed, ledger_path)
     except Exception:
         return False
@@ -8620,7 +8627,7 @@ def _red_post_kernel(
             f"--task-id {expected_task_id} does not match pending task {task_uuid}",
         )
     try:
-        record = TaskRecord.model_validate(pending_record)
+        record = _ledger_task_record(pending_record)
         record.status = "RED"  # type: ignore[assignment]
         append_task_transition(record, ledger_path)
     except Exception as exc:
@@ -8886,10 +8893,7 @@ def _mise_config_paths(root: Path) -> list[Path]:
 
 
 def _mise_defined_tasks(root: Path) -> set[str]:
-    """Task names declared in ``mise.toml`` / ``.mise.toml``.
-
-    Evolves :func:`_mise_has_test_task` — same TOML detector, all keys.
-    """
+    """Task names and aliases declared in ``mise.toml`` / ``.mise.toml``."""
     import tomllib
 
     names: set[str] = set()
@@ -8901,6 +8905,14 @@ def _mise_defined_tasks(root: Path) -> set[str]:
         tasks = config.get("tasks")
         if isinstance(tasks, dict):
             names.update(str(key) for key in tasks)
+            for task in tasks.values():
+                if not isinstance(task, dict):
+                    continue
+                aliases = task.get("alias", [])
+                if isinstance(aliases, str):
+                    names.add(aliases)
+                elif isinstance(aliases, list):
+                    names.update(alias for alias in aliases if isinstance(alias, str))
     return names
 
 
@@ -9229,13 +9241,13 @@ def _resolve_layer_command(root: Path, task: dict | None = None) -> str:
     if not rungs:
         return ""
     declared = _task_verification_command(root, task)
+    if declared and _is_partial_verification(declared):
+        return rungs[0]
     kind = _classify_suite_kind(root, task, declared)
     if kind in {"unit", "integ", "e2e"}:
         layer = _suite_rung_command(root, kind)
         if layer:
             return layer
-        if declared and _is_partial_verification(declared):
-            return rungs[0]
         return rungs[-1]
     return rungs[0] if len(rungs) == 1 else _LADDER_JOIN.join(rungs)
 
@@ -10255,17 +10267,9 @@ def execute_post(
 ) -> None:
     root = Path.cwd()
 
-    if task_id:
-        result = _find_task_record(root, task_id)
-    else:
-        result = _resolve_task_context(None, root)
-
-    if result is not None:
-        task_record, ledger_path = result
-        resolved_task_id = task_record.get("id", task_id or "?")
-        _append_status_transition(task_record, "COMPLETED", ledger_path)
-    else:
-        resolved_task_id = task_id or "?"
+    task_record, ledger_path = _resolve_task_context(task_id, root)
+    resolved_task_id = task_record.get("id", task_id or "?")
+    _append_status_transition(task_record, "COMPLETED", ledger_path)
 
     if not subject:
         subject = f"feat({resolved_task_id}): execute result"

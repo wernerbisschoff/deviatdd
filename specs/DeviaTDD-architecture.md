@@ -269,6 +269,8 @@ see `DeviaTDD-api.md` §5 for the orchestration contract.:
 - **Non-TDD tasks** (`execution_mode: "DIRECT" | "E2E"`): Immediate completion via
   `_run_execute_phase()`, which marks the task COMPLETED without test generation.
   The EXECUTE implementation commit (or clean-tree no-op) happens before JUDGE. After JUDGE `COMPLIANCE_PASS` / `skip_refactor` / `JUDGE_SKIP`, the COMPLETED row is committed in a follow-up ledger-only `chore(<scope>): mark COMPLETED in ledger` so the working tree is not left dirty (GH-231).
+  Manual `execute post` reuses `execute pre` task lookup, including task cards without ledger rows.
+  It records COMPLETED before committing. An unknown explicit task ID fails without a commit.
 - **Operator output:** RED, GREEN, JUDGE, and REFACTOR use one shared `PhaseCallout`
   heading format. GREEN retries use one `TRAIN (<attempt>/3) — <reason>` line.
   MESO prints one heading for PLAN and one for TASKS. MESO backend and model
@@ -764,13 +766,15 @@ both layers. Classify from the
 task card **Test Strategy** (`unit` | `integration` | `e2e`) and `execution_mode: E2E`
 first. A partial declared verification (file / `-k` / node id) becomes `mise exec --
 <command>` when `mise.toml` / `.mise.toml` is present. Init also exposes this operation as
-`mise run test:one -- <target> [arguments]` for agents and humans. RED, GREEN, and REFACTOR
-use the targeted command while iterating, then run the matching complete layer before completion.
+`mise run test:one -- <target> [arguments]` for agents and humans. Scoped verification uses
+one identical command in pre contracts, agent layer locks, and post-agent checks (GH-258).
 Commands already starting with `mise run` or `mise exec` remain unchanged; `_scoped_declared_command` does not nest mise commands.
-The runner still walks cheaper existing rungs after an integration/e2e RED: `unit` →
+For unscoped verification, the runner walks cheaper existing rungs after an integration/e2e RED: `unit` →
 unit only (never integ/e2e, never `mise test`); `integration` → unit then integration; `e2e` →
 unit then integration then e2e. Missing cheaper rungs are skipped, not invented. `mise doctor`
 remains the configured readiness preflight for integration, E2E, or an unstamped full suite.
+Task discovery reads task keys and string/list `alias` values from both supported mise TOML files.
+Aliases supply existing verification rungs; the allowlist still controls which names enter phase contracts.
 A unit-stamped sociable test must still run with the DB down under `mise unit`. After JUDGE
 `revert_green` / `revert_red` (and the RED-escalate persist-then-reset path), an
 `integration` or `e2e` stamp runs `mise run reset`; missing or failing reset is
@@ -863,6 +867,9 @@ The orchestrator must maintain and enforce these structural constraints across a
     **2 retry attempts** (`_execute_task_with_retry`, `for attempt in range(2)`) before
     being marked `FAILED`. The pipeline **halts on the first failure** (`any_failed = True;
     break`) and exits with code `1`.
+    Phase persistence removes queue-only `depends_on` before strict `TaskRecord` validation (GH-259).
+    Queue records retain prerequisites for dispatch checks; ledger records retain their existing schema and layer metadata.
+    Other unknown fields remain validation errors.
 
 
 

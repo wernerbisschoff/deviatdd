@@ -1084,3 +1084,17 @@ class TestResolveLintCommandMiseFallback:
         const.parent.mkdir(parents=True)
         const.write_text("LINT_COMMAND: `custom-lint --strict`\n", encoding="utf-8")
         assert micro._resolve_lint_command(tmp_path) == "custom-lint --strict"
+
+
+@pytest.mark.parametrize("hidden", [False, True])
+@pytest.mark.parametrize("alias", ['"e2e"', '["e2e", "smoke"]'])
+def test_e2e_strategy_resolves_mise_task_alias(tmp_path, hidden, alias):
+    _write_mise(
+        tmp_path,
+        f'[tasks."test:e2e"]\nalias = {alias}\nrun = "pytest tests/e2e"\n',
+        hidden=hidden,
+    )
+    task = _make_task(test_strategy="e2e")
+
+    assert micro._resolve_verification_command(tmp_path, task) == "mise e2e"
+    assert micro._resolve_verification_rungs(tmp_path, task) == ["mise e2e"]
