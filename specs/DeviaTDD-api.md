@@ -794,7 +794,8 @@ Tasks without assigned AC references retain the previous full-context behavior. 
 * **Source:** `src/deviate/cli/micro.py`
 * **Description:** Resolves the task context from `tasks.jsonl`, emits JSON contract with
   `task_id`, `test_strategy` (`unit` | `integration` | `e2e`), `test_write_dir` (init-convention
-  directory for that layer), `test_command` (this layer's named mise task only — `mise unit` /
+  directory for that layer), `test_command` (scoped declared verification when it is a file / `-k` /
+  node id; otherwise this layer's named mise task — `mise unit` /
   `mise integration` / `mise e2e`; never inject `mise integ` when `mise integration` exists),
   `lint_command`, `spec_dir`, `spec_content` (task acceptance context), and `task_entry` (this task's
   `tasks.md` card via `_task_card_text`, mirroring `green_pre` — it carries persisted
@@ -900,8 +901,8 @@ Tasks without assigned AC references retain the previous full-context behavior. 
 * **Source:** `src/deviate/cli/micro.py`
 * **Description:** Resolves task context, emits JSON contract with `task_entry`, `spec_content`, `test_file`,
   `implementation_targets` (all `src/**/*.py` files), and the same layer contract as
-  `red pre` (`test_strategy`, `test_write_dir`, `test_command` — this layer's named
-  mise task only). GREEN must not write tests. Its canonical prompt applies the
+  `red pre` (`test_strategy`, `test_write_dir`, `test_command` — the same
+  scoped or named-layer command as `red pre`). GREEN must not write tests. Its canonical prompt applies the
   Ponytail construction ladder before adding code: existing behavior (YAGNI),
   existing-code reuse, standard library, native platform feature, already-installed
   dependency, one line, then the minimum that works. The installed manual

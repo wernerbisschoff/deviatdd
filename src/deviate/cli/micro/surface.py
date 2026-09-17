@@ -9244,9 +9244,12 @@ def _product_strategy_name(kind: str | None) -> str:
 def _resolve_layer_command(root: Path, task: dict | None = None) -> str:
     """This task's own rung — what pre / ``{test_command}`` inject.
 
-    An integration RED runs ``mise integration`` (or ``mise integ`` if that
-    is the only defined name). The runner may still execute cheaper rungs
-    after the agent via :func:`_resolve_verification_rungs`.
+    A partial declared verification (file, ``-k``, node id) is preserved
+    as the scoped command so the agent layer lock matches post-agent
+    rungs (GH-258). Otherwise an integration RED runs ``mise
+    integration`` (or ``mise integ`` if that is the only defined name).
+    The runner may still execute cheaper rungs after the agent via
+    :func:`_resolve_verification_rungs` when the declaration is unscoped.
     """
     rungs = _resolve_verification_rungs(root, task)
     if not rungs:
@@ -9306,9 +9309,11 @@ def _layer_lock_block(layer: dict[str, str]) -> str:
 def _resolve_verification_command(root: Path, task: dict | None = None) -> str:
     """Layer command for pre JSON and ``{test_command}`` injection.
 
-    Stamped tasks get that layer's named mise task (``mise unit`` /
-    ``mise integration`` / ``mise e2e``). The runner still walks cheaper
-    existing rungs via :func:`_resolve_verification_rungs`.
+    Partial declarations stay scoped (GH-258). Unscoped stamped tasks
+    get that layer's named mise task (``mise unit`` / ``mise
+    integration`` / ``mise e2e``). The runner still walks cheaper rungs
+    via :func:`_resolve_verification_rungs` only when the declaration
+    is unscoped.
     """
     return _resolve_layer_command(root, task)
 
