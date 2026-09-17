@@ -802,6 +802,21 @@ Tasks without assigned AC references retain the previous full-context behavior. 
   manual mode cannot inject as `<train_feedback>`). The runner determines the layer and
   **explicitly passes** those three fields; the agent must not infer the layer by reading
   `tasks.md` (card **Test Strategy** is a fallback only when the contract field is missing).
+  A mixed unit/integration/e2e contract fails with `SPLIT_TASK_REQUIRED` at
+  `_red_pre_kernel` before any agent spawn. The precise token is preserved on
+  both the manual `red pre` surface and auto `_run_red_phase`; it is never
+  remapped to `TASK_NOT_FOUND`, and RED does not fall back to `mise unit`
+  (GH-252). `_build_auto_prompt` uses the same single-layer gate.
+
+#### `deviate red refresh-layer --task <id>`
+
+* **Source:** `src/deviate/cli/micro.py`
+* **Description:** After an operator-approved `tasks.md` **Test Strategy**
+  correction, append a ledger row that restamps `TaskRecord.test_strategy`
+  from the card. The restamped view must resolve to a single layer;
+  otherwise `SPLIT_TASK_REQUIRED` is preserved and no row is written. Use
+  this when a stale unit (or other) ledger stamp still mixes with the
+  corrected card and blocks RED pre. Does not spawn an agent (GH-252).
 
 #### `deviate red post [--task-id <id>]`
 

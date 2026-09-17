@@ -9,8 +9,16 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
+from rich.console import Console
+
 from deviate.cli import cli
-from deviate.cli.micro import _pre_layer_contract
+from deviate.cli.micro import (
+    KernelError,
+    PhaseFailedError,
+    _pre_layer_contract,
+    _red_pre_kernel,
+    _run_red_phase,
+)
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord
 
@@ -25,6 +33,14 @@ def _write_ledger(ledger_path: Path, *records: TaskRecord) -> None:
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     for r in records:
         ledger_path.open("a", encoding="utf-8").write(r.model_dump_json() + "\n")
+
+
+def _write_layer_mise(tmp_path: Path) -> None:
+    (tmp_path / "mise.toml").write_text(
+        '[tasks.unit]\nrun = "pytest tests/unit"\n'
+        '[tasks.integration]\nrun = "pytest tests/integration"\n',
+        encoding="utf-8",
+    )
 
 
 def _setup_root(tmp_path: Path, task: TaskRecord, card: str) -> dict:
@@ -99,6 +115,111 @@ def test_red_pre_cli_exits_nonzero_without_spawning_agents(tmp_path: Path):
             result = runner.invoke(cli, ["red", "pre", "--task", TASK_ID])
         assert result.exit_code != 0
         spawn.assert_not_called()
+
+
+@pytest.mark.behavioral
+def test_red_pre_preserves_split_token_not_task_not_found(tmp_path: Path):
+    """GH-252: manual red pre keeps SPLIT_TASK_REQUIRED instead of TASK_NOT_FOUND."""
+    task = _mixed_task(test_strategy="unit")
+    card = _card(
+        "  - **Test Strategy**: unit\n"
+        "  - Files: tests/unit/test_a.py tests/integration/test_b.py\n"
+    )
+    with chdir(tmp_path):
+        _setup_root(tmp_path, task, card)
+        result = runner.invoke(cli, ["red", "pre", "--task", TASK_ID])
+    assert result.exit_code != 0
+    assert "SPLIT_TASK_REQUIRED" in result.output
+    assert "TASK_NOT_FOUND" not in result.output
+
+
+@pytest.mark.behavioral
+def test_red_pre_kernel_preserves_split_token(tmp_path: Path):
+    """GH-252: `_red_pre_kernel` raises SPLIT_TASK_REQUIRED, not TASK_NOT_FOUND."""
+    task = _mixed_task(test_strategy="unit")
+    card = _card(
+        "  - **Test Strategy**: unit\n"
+        "  - Files: tests/unit/test_a.py tests/integration/test_b.py\n"
+    )
+    with chdir(tmp_path):
+        _setup_root(tmp_path, task, card)
+        with pytest.raises(KernelError) as exc:
+            _red_pre_kernel(TASK_ID, tmp_path)
+    assert exc.value.token == "SPLIT_TASK_REQUIRED"
+    assert "integration" in exc.value.detail
+    assert "unit" in exc.value.detail
+
+
+@pytest.mark.behavioral
+def test_mixed_contract_run_red_phase_does_not_spawn_unit_fallback(tmp_path: Path):
+    """GH-252: auto RED hard-stops on SPLIT_TASK_REQUIRED and does not spawn."""
+    task = _mixed_task(test_strategy="unit")
+    card = _card(
+        "  - **Test Strategy**: unit\n"
+        "  - Files: tests/unit/test_a.py tests/integration/test_b.py\n"
+    )
+    with chdir(tmp_path):
+        row = _setup_root(tmp_path, task, card)
+        session_path = tmp_path / ".deviate" / "session.json"
+        session = SessionState.load(session_path)
+        ledger_path = tmp_path / "specs" / "043-red-split" / "tasks.jsonl"
+        with (
+            patch("deviate.cli.micro._invoke_agent") as spawn,
+            patch("deviate.cli.micro._run_pytest") as run_pytest,
+            patch("deviate.cli.micro._build_auto_prompt") as build_prompt,
+        ):
+            with pytest.raises(PhaseFailedError) as exc:
+                _run_red_phase(
+                    row, ledger_path, session, session_path, Console(quiet=True)
+                )
+        spawn.assert_not_called()
+        run_pytest.assert_not_called()
+        build_prompt.assert_not_called()
+    assert "SPLIT_TASK_REQUIRED" in str(exc.value)
+    assert "TASK_NOT_FOUND" not in str(exc.value)
+
+
+@pytest.mark.behavioral
+def test_refresh_layer_restamps_stale_unit_from_corrected_card(tmp_path: Path):
+    """GH-252: operator card correction can restamp stale ledger layer metadata."""
+    from deviate.cli.micro import _find_task_record, _refresh_task_layer
+
+    task = _mixed_task(test_strategy="unit")
+    card = _card(
+        "  - **Test Strategy**: integration\n  - Files: tests/integration/test_b.py\n"
+    )
+    with chdir(tmp_path):
+        row = _setup_root(tmp_path, task, card)
+        _write_layer_mise(tmp_path)
+        with pytest.raises(KernelError) as before:
+            _red_pre_kernel(TASK_ID, tmp_path)
+        assert before.value.token == "SPLIT_TASK_REQUIRED"
+        result = _refresh_task_layer(tmp_path, TASK_ID)
+        assert result["test_strategy"] == "integration"
+        assert result["previous_test_strategy"] == "unit"
+        assert result["refreshed"] is True
+        contract = _red_pre_kernel(TASK_ID, tmp_path)
+        assert contract["test_strategy"] == "integration"
+        latest = _find_task_record(tmp_path, TASK_ID)
+        assert latest is not None
+        assert latest[0].get("test_strategy") == "integration"
+        assert row.get("test_strategy") == "unit"
+
+
+@pytest.mark.behavioral
+def test_refresh_layer_cli_restamps_and_exits_zero(tmp_path: Path):
+    """GH-252: `deviate red refresh-layer` is the supported restamp surface."""
+    task = _mixed_task(test_strategy="unit")
+    card = _card(
+        "  - **Test Strategy**: integration\n  - Files: tests/integration/test_b.py\n"
+    )
+    with chdir(tmp_path):
+        _setup_root(tmp_path, task, card)
+        _write_layer_mise(tmp_path)
+        result = runner.invoke(cli, ["red", "refresh-layer", "--task", TASK_ID])
+    assert result.exit_code == 0, result.output
+    assert "integration" in result.output
+    assert "TASK_NOT_FOUND" not in result.output
 
 
 @pytest.mark.behavioral
