@@ -21,7 +21,10 @@ PUBLIC_NAMES = [
 
 APP_COMMANDS = {
     "micro_app": ["run"],
-    "red_app": ["pre", "post"],
+    # GH-252: `refresh-layer` restamps stale ledger test_strategy after an
+    # operator-approved card correction. Keep it on red_app so mixed-contract
+    # hard-stop has a supported recovery surface.
+    "red_app": ["pre", "post", "refresh-layer"],
     "green_app": ["pre", "post"],
     "judge_app": ["pre", "post"],
     "refactor_app": ["pre", "post"],

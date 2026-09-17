@@ -1635,7 +1635,7 @@ def _build_auto_prompt(
     task_content = _this_task_prompt_card(root, task, phase=phase)
     if phase in {"red", "green"}:
         train_feedback = _task_train_feedback(root, task, train_feedback)
-    layer = _layer_contract_fields(root, task)
+    layer = _require_single_layer_contract(root, task)
     test_command = layer["test_command"]
     lint_command = _resolve_lint_command(root)
     verification_command = test_command
@@ -8343,15 +8343,17 @@ def _red_pre_kernel(
         task_data, ledger_path = resolved
         contract: dict[str, object] = {
             "task_id": task_data.get("id", ""),
-            **_pre_layer_contract(root, task_data),
+            **_require_single_layer_contract(root, task_data),
             "lint_command": "mise run lint",
             "spec_dir": str(ledger_path.parent),
             "task_entry": _task_card_text(root, task_data),
             "spec_content": _resolve_spec_md(root, task_data, task_scoped=True),
         }
         _attach_mise_pre(root, contract, task_data)
+    except VerificationUnresolvedError as exc:
+        raise _kernel_error_from_unresolved(exc) from exc
     except typer.Exit as exc:
-        raise KernelError("TASK_NOT_FOUND", str(task_id or "")) from exc
+        raise _kernel_error_from_pre_exit(exc, task_id) from exc
     return contract
 
 
@@ -8499,7 +8501,7 @@ def _refactor_pre_kernel(
             "task_id": task_data.get("id", ""),
             "task_title": task_data.get("description", ""),
             "task_type": _task_type_from_card(card),
-            **_pre_layer_contract(root, task_data),
+            **_require_single_layer_contract(root, task_data),
             "lint_command": _resolve_lint_command(root),
             "spec_dir": str(ledger_path.parent),
             "verification": _task_verification_command(root, task_data),
@@ -8509,8 +8511,10 @@ def _refactor_pre_kernel(
             "files_to_refactor": _resolve_files_to_refactor(root, task_data),
         }
         _attach_mise_pre(root, contract, task_data)
+    except VerificationUnresolvedError as exc:
+        raise _kernel_error_from_unresolved(exc) from exc
     except typer.Exit as exc:
-        raise KernelError("TASK_NOT_FOUND", str(task_id or "")) from exc
+        raise _kernel_error_from_pre_exit(exc, task_id) from exc
     return contract
 
 
@@ -8695,15 +8699,18 @@ def _green_pre_kernel(
                 break
             if capture:
                 task_entry += line + "\n"
-    contract: dict[str, object] = {
-        "task_id": contract_task_id,
-        "task_entry": task_entry.strip(),
-        "spec_content": _resolve_spec_md(root, task_data, task_scoped=True),
-        "test_file": str(test_files[0]) if test_files else "",
-        "implementation_targets": [str(f) for f in src_files],
-        **_pre_layer_contract(root, task_data),
-    }
-    _attach_mise_pre(root, contract, task_data)
+    try:
+        contract: dict[str, object] = {
+            "task_id": contract_task_id,
+            "task_entry": task_entry.strip(),
+            "spec_content": _resolve_spec_md(root, task_data, task_scoped=True),
+            "test_file": str(test_files[0]) if test_files else "",
+            "implementation_targets": [str(f) for f in src_files],
+            **_require_single_layer_contract(root, task_data),
+        }
+        _attach_mise_pre(root, contract, task_data)
+    except VerificationUnresolvedError as exc:
+        raise _kernel_error_from_unresolved(exc) from exc
     return contract
 
 
@@ -8767,6 +8774,21 @@ def red_pre(
     print(json.dumps(contract, ensure_ascii=False))
     doctor = contract.get("doctor")
     _fail_pre_if_doctor_failed(doctor if isinstance(doctor, dict) else None)  # type: ignore[arg-type]
+    raise typer.Exit(code=0)
+
+
+@red_app.command(name="refresh-layer")
+def red_refresh_layer(
+    task: str = typer.Option(..., "--task", "-t", help="Task ID"),
+) -> None:
+    """Restamp ledger test_strategy from an operator-corrected task card."""
+    root = Path.cwd()
+    try:
+        result = _refresh_task_layer(root, task)
+    except KernelError as exc:
+        console.print(f"[red]{exc.token}[/] {exc.detail or task}".rstrip())
+        raise typer.Exit(code=1) from exc
+    print(json.dumps(result, ensure_ascii=False))
     raise typer.Exit(code=0)
 
 
@@ -8973,6 +8995,16 @@ def _is_partial_verification(command: str) -> bool:
     return False
 
 
+def _card_test_strategy(root: Path, task: dict | None) -> str | None:
+    """Return the card **Test Strategy** without consulting the ledger stamp."""
+    if not task:
+        return None
+    match = _TEST_STRATEGY_LINE_RE.search(_task_card_text(root, task))
+    if match:
+        return parse_test_strategy(match.group(1))
+    return None
+
+
 def _extract_test_strategy(root: Path, task: dict | None) -> str | None:
     """Return ``unit`` | ``integration`` | ``e2e`` from the task or card."""
     if not task:
@@ -8980,11 +9012,7 @@ def _extract_test_strategy(root: Path, task: dict | None) -> str | None:
     parsed = parse_test_strategy(task.get("test_strategy"))
     if parsed:
         return parsed
-    card = _task_card_text(root, task)
-    match = _TEST_STRATEGY_LINE_RE.search(card)
-    if match:
-        return parse_test_strategy(match.group(1))
-    return None
+    return _card_test_strategy(root, task)
 
 
 def _classify_suite_kind(root: Path, task: dict | None, declared: str) -> str | None:
@@ -9448,22 +9476,89 @@ def _classify_suite_layers(root: Path, task: dict | None) -> set[str]:
     return layers
 
 
-def _pre_layer_contract(root: Path, task: dict | None) -> dict[str, str]:
-    """``test_strategy``, ``test_write_dir``, and ``test_command`` for pre JSON."""
+def _unresolved_token(exc: VerificationUnresolvedError) -> tuple[str, str]:
+    message = str(exc)
+    token, sep, rest = message.partition(": ")
+    if not sep:
+        return "VERIFICATION_UNRESOLVED", message
+    return token, rest
+
+
+def _kernel_error_from_unresolved(exc: VerificationUnresolvedError) -> KernelError:
+    token, detail = _unresolved_token(exc)
+    return KernelError(token, detail)
+
+
+def _kernel_error_from_pre_exit(exc: typer.Exit, task_id: str | None) -> KernelError:
+    cause = exc.__cause__
+    if isinstance(cause, VerificationUnresolvedError):
+        return _kernel_error_from_unresolved(cause)
+    return KernelError("TASK_NOT_FOUND", str(task_id or ""))
+
+
+def _require_single_layer_contract(root: Path, task: dict | None) -> dict[str, str]:
+    """Resolve the layer contract or raise ``SPLIT_TASK_REQUIRED`` / unresolved."""
     layers = _classify_suite_layers(root, task)
     if len(layers) >= 2:
         names = ", ".join(sorted(layers))
-        exc = VerificationUnresolvedError(
+        raise VerificationUnresolvedError(
             f"SPLIT_TASK_REQUIRED: mixed test contract spans {names} — "
             "split into one task per layer"
         )
-        console.print(f"[red]{exc}[/]")
-        raise typer.Exit(code=1) from exc
+    return _layer_contract_fields(root, task)
+
+
+def _pre_layer_contract(root: Path, task: dict | None) -> dict[str, str]:
+    """``test_strategy``, ``test_write_dir``, and ``test_command`` for pre JSON."""
     try:
-        return _layer_contract_fields(root, task)
+        return _require_single_layer_contract(root, task)
     except VerificationUnresolvedError as exc:
         console.print(f"[red]{exc}[/]")
         raise typer.Exit(code=1) from exc
+
+
+def _refresh_task_layer(root: Path, task_id: str) -> dict[str, object]:
+    """Restamp ledger ``test_strategy`` from an operator-corrected card."""
+    try:
+        resolved = _resolve_task_context(task_id, root)
+    except typer.Exit as exc:
+        raise _kernel_error_from_pre_exit(exc, task_id) from exc
+    if resolved is None:
+        raise KernelError("TASK_NOT_FOUND", task_id)
+    task_data, ledger_path = resolved
+    card_strategy = _card_test_strategy(root, task_data)
+    if not card_strategy:
+        raise KernelError(
+            "LAYER_REFRESH_UNRESOLVED",
+            f"{task_id} card has no Test Strategy to restamp",
+        )
+    refreshed = {**task_data, "test_strategy": card_strategy}
+    layers = _classify_suite_layers(root, refreshed)
+    if len(layers) >= 2:
+        names = ", ".join(sorted(layers))
+        raise KernelError(
+            "SPLIT_TASK_REQUIRED",
+            f"mixed test contract spans {names} — split into one task per layer",
+        )
+    previous = parse_test_strategy(task_data.get("test_strategy"))
+    if previous != card_strategy:
+        append_task_event(
+            TaskRecord(
+                id=task_data["id"],
+                issue_id=task_data.get("issue_id", ""),
+                description=task_data.get("description", ""),
+                status=task_data.get("status", "PENDING"),  # type: ignore[arg-type]
+                execution_mode=task_data.get("execution_mode", "TDD"),
+                test_strategy=card_strategy,  # type: ignore[arg-type]
+            ),
+            ledger_path,
+        )
+    return {
+        "task_id": task_id,
+        "test_strategy": card_strategy,
+        "previous_test_strategy": previous or "",
+        "refreshed": previous != card_strategy,
+    }
 
 
 _IGNORED_TEST_DISCOVERY_DIRS = frozenset(
