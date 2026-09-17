@@ -1130,12 +1130,16 @@ Tasks without assigned AC references retain the previous full-context behavior. 
     feedback from `.verdicts.jsonl`, `tasks.md` Judge Feedback, and
     `session.train_feedback`. When the latest Requirement/Correction text
     polar-flips (strict identity matching vs preserve conflicting
-    fixtures/tests about the same shared identity token) or oscillates A-B-A,
-    the runner logs `JUDGE_REQUIREMENT_CONTRADICTION`, marks `HITL_PENDING`,
+    fixtures/tests about the same shared identity token), flips unit↔
+    integration layer, or oscillates A-B-A with conflicting requested vs
+    provider values for the same returned identity, the runner logs
+    `JUDGE_REQUIREMENT_CONTRADICTION`, marks `HITL_PENDING`,
     raises `HitlEscalationError`, and does not consume further GREEN/RED train
-    budget (GH-230). Unit↔integration layer oscillation on a stamped task is
-    prevented earlier by `<layer_lock>` (GH-248); this HITL remains the
-    backstop. Generic `matching` wording without an identity, explicit
+    budget (GH-230, GH-253). Unit↔integration layer oscillation on a stamped
+    task is prevented earlier by `<layer_lock>` (GH-248); this HITL remains
+    the backstop. A-B-A token similarity alone is not a contradiction:
+    additive restatements (changelog + verification, coverage + evidence)
+    still train. Generic `matching` wording without an identity, explicit
     conflict language without a shared subject, and stale non-adjacent history
     still train. Identical restated requirements still train. `LOOP_DETECTED`
     remains telemetry only. On test failure or `COMPLIANCE_VIOLATION`,
@@ -1278,7 +1282,7 @@ Tasks without assigned AC references retain the previous full-context behavior. 
   Literal closing tags in feedback cannot terminate the training section.
   The runner adds current session feedback only when no recorded round contains the same complete text.
   Earlier constraints remain active unless later feedback explicitly replaces them. Task acceptance and phase boundaries still apply.
-  `_build_auto_prompt` also injects an immutable `<layer_lock>` (`test_strategy` / `test_write_dir` / `test_command`) above RED, GREEN, and JUDGE training text. The lock outranks JUDGE feedback that names a different layer so an integration-stamped task cannot be retrained onto unit artifacts (GH-248). GH-230 `JUDGE_REQUIREMENT_CONTRADICTION` HITL remains the backstop.
+  `_build_auto_prompt` also injects an immutable `<layer_lock>` (`test_strategy` / `test_write_dir` / `test_command`) above RED, GREEN, and JUDGE training text. The lock outranks JUDGE feedback that names a different layer so an integration-stamped task cannot be retrained onto unit artifacts (GH-248). GH-230 / GH-253 `JUDGE_REQUIREMENT_CONTRADICTION` HITL remains the backstop.
   `_append_judge_feedback` appends each round under the exact task card, with indented continuation lines and no history limit.
   `_task_train_feedback` reads complete rounds, including nested Markdown. RED/GREEN task cards exclude feedback to prevent duplicate injection.
   JUDGE task cards and acceptance-token resolution exclude complete feedback blocks. Sibling tasks and phase headings remain unchanged.

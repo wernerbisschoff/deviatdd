@@ -1,9 +1,11 @@
 """Detect mutually incompatible successive JUDGE rejection requirements.
 
-MVP for GH-230: compare JUDGE verdict / repair-contract text across
-rounds. A polar flip (strict identity matching vs preserve conflicting
-fixtures) or an A-B-A oscillation is a specification decision, not more
-implementation training.
+MVP for GH-230 / GH-253: compare JUDGE verdict / repair-contract text
+across rounds. A polar flip (strict identity matching vs preserve
+conflicting fixtures), a unit↔integration layer flip, or an A-B-A
+oscillation with conflicting requested/provider identity values is a
+specification decision. Additive restatements (changelog + verification,
+coverage + evidence) stay bounded training.
 """
 
 from __future__ import annotations
@@ -115,6 +117,26 @@ _STOPWORDS = frozenset(
 )
 _OSCILLATION_SAME = 0.55
 _OSCILLATION_DIFF = 0.35
+_REQUESTED_VALUE_RE = re.compile(
+    r"\b(?:return(?:s|ed|ing)?\s+the\s+requested"
+    r"|requested\s+\w*id"
+    r"|request(?:ed)?\s+identity)\b",
+    re.IGNORECASE,
+)
+_PROVIDER_VALUE_RE = re.compile(
+    r"\b(?:return(?:s|ed|ing)?\s+the\s+provider"
+    r"|provider\s+(?:catalog\s+)?(?:\w*id|identity)"
+    r"|catalog\s+(?:\w*id|identifier))\b",
+    re.IGNORECASE,
+)
+_UNIT_LAYER_RE = re.compile(
+    r"\bunit\s+tests?\b|\btests[/\\]unit\b|\bmise\s+unit\b",
+    re.IGNORECASE,
+)
+_INTEGRATION_LAYER_RE = re.compile(
+    r"\bintegration\s+tests?\b|\btests[/\\]integration\b|\bmise\s+integration\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,6 +241,62 @@ def _has_preserve_identity(text: str) -> bool:
     return bool(_PRESERVE_RE.search(text) and _identity_tokens(text))
 
 
+def _has_requested_value(text: str) -> bool:
+    return bool(_REQUESTED_VALUE_RE.search(text or ""))
+
+
+def _has_provider_value(text: str) -> bool:
+    return bool(_PROVIDER_VALUE_RE.search(text or ""))
+
+
+def _requested_provider_conflict(left: str, right: str) -> bool:
+    """True when both sides name the same identity with opposite sources."""
+    left_focus = requirement_focus(left)
+    right_focus = requirement_focus(right)
+    if not (_identity_tokens(left_focus) & _identity_tokens(right_focus)):
+        return False
+    left_requested = _has_requested_value(left_focus)
+    left_provider = _has_provider_value(left_focus)
+    right_requested = _has_requested_value(right_focus)
+    right_provider = _has_provider_value(right_focus)
+    return (left_requested and right_provider) or (left_provider and right_requested)
+
+
+def _layer_side(text: str) -> str | None:
+    focus = requirement_focus(text)
+    unit = bool(_UNIT_LAYER_RE.search(focus))
+    integration = bool(_INTEGRATION_LAYER_RE.search(focus))
+    if unit and not integration:
+        return "unit"
+    if integration and not unit:
+        return "integration"
+    return None
+
+
+def _layer_sides_conflict(left: str, right: str) -> bool:
+    left_side = _layer_side(left)
+    right_side = _layer_side(right)
+    return left_side is not None and right_side is not None and left_side != right_side
+
+
+def _layer_flip(prior: str, current: str) -> JudgeContradiction | None:
+    if not _layer_sides_conflict(prior, current):
+        return None
+    prior_focus = requirement_focus(prior)
+    current_focus = requirement_focus(current)
+    shared = tuple(sorted(_tokens(prior_focus) & _tokens(current_focus)))
+    return JudgeContradiction(
+        kind="layer_flip",
+        prior=prior.strip(),
+        current=current.strip(),
+        shared_tokens=shared,
+        summary=(
+            "Successive JUDGE requirements conflict: one requires the unit "
+            "test layer and the other requires the integration test layer."
+        ),
+    )
+
+
 def _polar_flip(prior: str, current: str) -> JudgeContradiction | None:
     prior_focus = requirement_focus(prior)
     current_focus = requirement_focus(current)
@@ -286,21 +364,30 @@ def _oscillation(
     current_tokens = _tokens(requirement_focus(current))
     older_tokens = _tokens(requirement_focus(older))
     previous_tokens = _tokens(requirement_focus(previous))
-    if (
+    aba = (
         _jaccard(current_tokens, older_tokens) >= _OSCILLATION_SAME
         and _jaccard(current_tokens, previous_tokens) <= _OSCILLATION_DIFF
-    ):
-        return JudgeContradiction(
-            kind="oscillation",
-            prior=previous.strip(),
-            current=current.strip(),
-            shared_tokens=tuple(sorted(current_tokens & older_tokens)),
-            summary=(
-                "JUDGE requirements oscillated between two incompatible "
-                "interpretations (A → B → A). Stop training and choose one spec."
-            ),
-        )
-    return None
+    )
+    if not aba:
+        return None
+    poles_conflict = (
+        _requested_provider_conflict(older, previous)
+        or _requested_provider_conflict(current, previous)
+        or _layer_sides_conflict(older, previous)
+        or _layer_sides_conflict(current, previous)
+    )
+    if not poles_conflict:
+        return None
+    return JudgeContradiction(
+        kind="oscillation",
+        prior=previous.strip(),
+        current=current.strip(),
+        shared_tokens=tuple(sorted(current_tokens & older_tokens)),
+        summary=(
+            "JUDGE requirements oscillated between two incompatible "
+            "interpretations (A → B → A). Stop training and choose one spec."
+        ),
+    )
 
 
 def detect_judge_requirement_contradiction(
@@ -310,6 +397,9 @@ def detect_judge_requirement_contradiction(
 
     Empty history or empty current is not a contradiction. Identical
     restated requirements (same-blast training) are not a contradiction.
+    A-B-A token similarity is a contradiction only when the poles
+    conflict semantically (requested vs provider identity, or
+    unit vs integration layer). Additive restatements still train.
     """
     current_text = (current or "").strip()
     if not current_text:
@@ -326,7 +416,11 @@ def detect_judge_requirement_contradiction(
     if not distinct:
         return None
     latest = distinct[-1]
-    found = _explicit(latest, current_text) or _polar_flip(latest, current_text)
+    found = (
+        _explicit(latest, current_text)
+        or _polar_flip(latest, current_text)
+        or _layer_flip(latest, current_text)
+    )
     if found:
         return found
     return _oscillation(history, current_text)
