@@ -354,8 +354,6 @@ def _explicit(prior: str, current: str) -> JudgeContradiction | None:
     )
 
 
-
-
 def detect_judge_requirement_contradiction(
     prior_rounds: Sequence[str], current: str
 ) -> JudgeContradiction | None:
@@ -382,4 +380,8 @@ def detect_judge_requirement_contradiction(
     if not distinct:
         return None
     latest = distinct[-1]
-    return _explicit(latest, current_text) or _polar_flip(latest, current_text) or _layer_flip(latest, current_text)
+    return (
+        _explicit(latest, current_text)
+        or _polar_flip(latest, current_text)
+        or _layer_flip(latest, current_text)
+    )
