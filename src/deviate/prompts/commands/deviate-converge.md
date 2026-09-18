@@ -115,7 +115,7 @@ On gaps, call `deviate converge post` with JSON:
 }
 ```
 
-`post` appends one `## Phase N: Convergence` section (N = max existing phase + 1) and matching PENDING `TSK-*` rows via `append_task_record`. Never rewrite, renumber, or delete existing tasks. Never hand-edit JSONL. A prior Convergence phase stays untouched.
+`deviate converge post` is the supported ledger write for this phase. It appends one `## Phase N: Convergence` section (N = max existing phase + 1) and matching PENDING `TSK-*` rows to `tasks.jsonl` via `append_task_record`. This is an allowed append-only ledger update. Never rewrite, renumber, delete, or hand-edit existing JSONL rows. A prior Convergence phase stays untouched.
 
 On a clean run:
 
@@ -136,7 +136,7 @@ After a clean assessment, `deviate converge post '{"findings":[]}'` removes this
 Do not include cleanup in findings. Cleanup runs only after post adds no tasks.
 Do not include follow-ups or reminders in the `findings` payload. They do not prevent CONVERGED.
 Do not append speculative, duplicate, or out-of-scope tasks.
-Never delete or rewrite the append-only ledger.
+Never delete, rewrite, or manually edit the append-only ledger. Converge `post` may append its generated PENDING rows.
 
 ## Steps
 

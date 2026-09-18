@@ -615,7 +615,8 @@ class TestConvergePrompt:
             "plan.md",
             "tasks.md",
             "tasks.jsonl",
-            "Never delete or rewrite the append-only ledger",
+            "deviate converge post` is the supported ledger write",
+            "Converge `post` may append its generated PENDING rows",
         ):
             assert requirement in text
 
