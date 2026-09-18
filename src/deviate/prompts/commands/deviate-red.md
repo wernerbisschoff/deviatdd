@@ -55,3 +55,7 @@ $ARGUMENTS
 
 When the suite passes, this phase completes with a warning advisory
 (`RedHandoffAdvisory`) handed to GREEN; the warning does not block GREEN start.
+
+### RED Test Boundary
+
+RED tests must exercise the requested user-visible behavior. Never write RED tests for sub-tests, formatting, linting, or test wrappers. A test that only forwards to another test, checks test discovery, or checks formatter/linter output is invalid.

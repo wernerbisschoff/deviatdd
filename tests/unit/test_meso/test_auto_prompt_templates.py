@@ -1183,6 +1183,16 @@ class TestRedCheckpointCompletion:
                     f"stale rejection statement survives: {phrase!r}"
                 )
 
+    @pytest.mark.behavioral
+    def test_red_templates_forbid_wrapper_and_tooling_tests(self) -> None:
+        for text in (_read_template("red.md"), self._read_command_red()):
+            lowered = text.lower()
+            assert "sub-tests" in lowered
+            assert "formatting" in lowered
+            assert "linting" in lowered
+            assert "test wrappers" in lowered
+            assert "only forwards to another test" in lowered
+
 
 class TestGreenRefactorGateSemantics:
     """AC-PLAN-002/003 (US-005-11, FR-005-06): GREEN blocking gate with
