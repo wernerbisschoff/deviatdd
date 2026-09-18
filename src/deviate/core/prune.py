@@ -243,7 +243,7 @@ def discover_issue_tests(root: Path, issue_id: str, source_file: str) -> list[Te
                 continue
             try:
                 text = path.read_text(encoding="utf-8")
-            except OSError:
+            except (OSError, UnicodeDecodeError):
                 continue
             rel = path.relative_to(root)
             haystack = f"{rel.as_posix()}\n{text}"

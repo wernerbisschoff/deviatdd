@@ -10,6 +10,7 @@ from deviate.core.prune import (
     apply_prune,
     build_prune_plan,
     classify_test,
+    discover_issue_tests,
     extract_plan_ac_tokens,
     is_ledger_rewrite_request,
     snapshot_ledgers,
@@ -64,6 +65,22 @@ def test_classify_test_untagged_body_keeps_public_io_and_ac() -> None:
         "def test_foo():\n    with pytest.raises(ValueError):\n        public_api(-1)\n"
     )
     assert classify_test("test_foo", body=raises_io) == "keep"
+
+
+def test_discover_issue_tests_skips_non_utf8_test_artifacts(tmp_path: Path) -> None:
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_issue.py").write_text(
+        "# 001-issue\ndef test_issue():\n    pass\n", encoding="utf-8"
+    )
+    (tests / "__pycache__").mkdir()
+    (tests / "__pycache__" / "test_issue.cpython-313.pyc").write_bytes(
+        bytes([0xA7, 0x00, 0x00])
+    )
+
+    discovered = discover_issue_tests(tmp_path, "ISS-001", "specs/issues/001-issue.md")
+
+    assert [item.name for item in discovered] == ["test_issue"]
 
 
 def test_extract_plan_ac_tokens_reads_plan_and_adhoc_forms() -> None:
