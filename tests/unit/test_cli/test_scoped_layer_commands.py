@@ -64,7 +64,7 @@ def _assert_same_scoped_selection(
 def test_gh258_integration_admission_keeps_scoped_command(tmp_path: Path):
     """Wallet-service reproduction: integration stamp + file + ``-k``."""
     task = _seed_scoped(tmp_path, strategy="integration", command=_ADMISSION)
-    expected = f"mise exec -- {_ADMISSION}"
+    expected = f"mise run {_ADMISSION[5:]}"
 
     _assert_same_scoped_selection(tmp_path, task, expected, "integration")
     assert micro._layer_contract_fields(tmp_path, task)["test_command"] != (
@@ -76,7 +76,7 @@ def test_gh258_integration_admission_keeps_scoped_command(tmp_path: Path):
 def test_gh258_unit_admission_keeps_scoped_command(tmp_path: Path):
     """Same-layer unit scoped path must not expand to ``mise unit``."""
     task = _seed_scoped(tmp_path, strategy="unit", command=_UNIT_SCOPED)
-    expected = f"mise exec -- {_UNIT_SCOPED}"
+    expected = f"mise run {_UNIT_SCOPED[5:]}"
 
     _assert_same_scoped_selection(tmp_path, task, expected, "unit")
     assert micro._layer_contract_fields(tmp_path, task)["test_command"] != "mise unit"
@@ -92,6 +92,12 @@ def test_scoped_layer_command_matches_pre_prompt_and_runner(
         f"{prefix} {strategy}" if prefix.startswith("mise") else prefix
     ) + f" tests/{strategy}/test_contract.py -k 'selected or retained'"
     task = _seed_scoped(tmp_path, strategy=strategy, command=command)
-    expected = command if prefix == "mise run" else f"mise exec -- {command}"
+    expected = (
+        command
+        if prefix == "mise run"
+        else (
+            f"mise run {command[5:]}" if prefix == "mise" else f"mise exec -- {command}"
+        )
+    )
 
     _assert_same_scoped_selection(tmp_path, task, expected, strategy)

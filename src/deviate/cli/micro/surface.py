@@ -9177,6 +9177,10 @@ def _legacy_full_suite_command(root: Path, declared: str) -> str:
 def _scoped_declared_command(root: Path, declared: str) -> str:
     if declared.startswith("mise run ") or declared.startswith("mise exec "):
         return declared
+    if declared.startswith("mise ") and _mise_present(root):
+        parts = declared.split(maxsplit=2)
+        if len(parts) >= 2 and parts[1] in _mise_defined_tasks(root):
+            return f"mise run {declared[len('mise ') :]}"
     if _mise_present(root):
         return f"mise exec -- {declared}"
     return declared
@@ -9387,8 +9391,9 @@ def _layer_lock_block(layer: dict[str, str], *, allow_setup: bool = False) -> st
         + (
             f"Verify with: {command}; local mise setup and diagnostics are also allowed.\n"
             if allow_setup
-            else f"Run only: {command}\n"
+            else ""
         )
+        + f"Run only: {command}\n"
         + f"test_strategy: {strategy}\n"
         f"test_write_dir: {write_dir}\n"
         f"test_command: {command}\n"
