@@ -141,8 +141,9 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
     - `path/to/file1.py`
     - `path/to/file2.py`
   - **Rationale**: <story + AC-PLAN-NNN + cause, at most 3 lines>
+  - **Acceptance Criteria**: <explicit comma-separated assigned AC-PLAN-NNN IDs; Rationale alone does not declare scope>
   - **Details**:
-    - **Red**: Write failing tests in the stamped layer only — forbid the other layers. Assert <expected behavior from the issue's User Stories + ATDD>
+    - **Red**: Write failing tests in the stamped layer only. Do not list excluded suite paths, even with negation. Assert <expected behavior from the issue's User Stories + ATDD>
     - **Green**: Implement `<function>()` with <logic>
     - **Refactor**: <code quality improvement> (only if material)
     - **Edge Cases**: Handle <error> by <action> (only if material)

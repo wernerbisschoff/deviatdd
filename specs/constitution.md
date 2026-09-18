@@ -1,6 +1,6 @@
 # Project Constitution
 
-Version: 0.12.0
+Version: 0.13.0
 
 ---
 
@@ -12,6 +12,7 @@ Version: 0.12.0
 - **Append-Only Ledger Protocol**: All state transitions in `issues.jsonl` and `tasks.jsonl` are append-only. No existing line is ever modified or overwritten. Canonical state is derived by sequential ledger parsing. Issue ids follow a per-epic format: new issues in a numbered epic bucket (`001-…`, `002-…`) emit `<epic-prefix>-<ordinal>` (e.g. `002-001`), where `<epic-prefix>` is the leading 3-digit segment of the epic bucket dir; the adhoc bucket and bootstrap contexts fall back to the legacy global-counter `ISS-NNN`. Legacy `ISS-NNN` rows in `specs/issues.jsonl` resolve unchanged — the resolve layer is format-agnostic, only uniqueness matters.
 - **Git Isolation Principle**: Every task loop executes on a clean git branch or worktree. Commits are automatic at each phase boundary.
 - **Micro-Layer Scope**: GREEN phase writes only to `src/` and permitted implementation paths. Any mutation outside this allow-list is flagged by the JUDGE phase as a scope violation.
+- **JUDGE Operational Authority**: JUDGE may repair the entire active issue's `tasks.md`, local mise definitions, and setup/doctor/reset scripts. It may execute local mise readiness and verification commands. Preserve product requirements, completed tasks, regression tests, secrets, append-only ledgers, and mandatory gates. The runner commits repairs separately and preserves them across rollback.
 - **Human-in-the-Loop (HITL)**: Two remaining mandatory gates (Design Approval after research, Final Merge Audit after micro) prevent autonomous drift. Gate 2 (post-Tasks approval) was removed — the system never blocks on human approval; `deviate run` chains meso into micro end-to-end. No remaining gate may be programmatically bypassed.
 - **Session Continuity**: Micro-layer tasks reuse a single LLM session across RED → GREEN → REFACTOR phases. Model switching mid-task is prohibited.
 - **Model Tiering**: V4 Flash for high-frequency phases (RED, GREEN, REFACTOR, `/explore`); V4 Pro for compliance and planning (JUDGE, `/plan`); Qwen 3.7+ for architecture (`/research`, `/prd`, `/shard`). This tiering is enforced via `.deviate/config.toml` `[models]` section — the `default` key sets the fallback model, and per-phase keys override it.
@@ -93,6 +94,8 @@ Version: 0.12.0
 - [ ] Committed with conventional message format (`test:`, `feat:`, `refactor:`, `docs:`)
 
 ## 6. Version History
+
+- 0.13.0 — Added JUDGE operational repair authority at the operator's explicit request. Product requirements and safety gates remain unchanged.
 
 - 0.12.0 — Replaced the obsolete Aider mandate in §2 with the current `AgentBackend` execution contract. Records existing behavior; preserves §1 model routing and phase gates. The operator explicitly approved this amendment during `HITL Gate 1`.
 - 0.11.0 — Reintroduced the Product layer as an optional `product` pack (`/deviate-flows`, `/deviate-architecture`, `/deviate-release`) authoring standalone `specs/_product/` planning artifacts for greenfield scope tracking. No ledger, no `flows.jsonl`, no `flow_refs` contract, no downstream reads — FLOW-NN IDs are prose anchors only.

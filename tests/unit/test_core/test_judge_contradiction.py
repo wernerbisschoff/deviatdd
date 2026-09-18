@@ -161,12 +161,11 @@ def test_first_rejection_has_no_contradiction() -> None:
     assert detect_judge_requirement_contradiction([STRICT_IDENTITY], "") is None
 
 
-def test_aba_oscillation_is_a_contradiction() -> None:
+def test_aba_wording_alone_does_not_prove_incompatible_identity_sources() -> None:
     found = detect_judge_requirement_contradiction(
         [REQUESTED_ID, PROVIDER_ID], REQUESTED_ID
     )
-    assert found is not None
-    assert found.kind == "oscillation"
+    assert found is None
 
 
 def test_additive_verification_and_changelog_aba_is_not_a_contradiction() -> None:
@@ -280,6 +279,5 @@ def test_repeated_aba_detection_returns_one_stable_result() -> None:
         [REQUESTED_ID, PROVIDER_ID], REQUESTED_ID
     )
 
-    assert first is not None
+    assert first is None
     assert second == first
-    assert first.kind == "oscillation"

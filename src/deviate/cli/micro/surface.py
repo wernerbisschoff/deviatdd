@@ -61,6 +61,12 @@ from deviate.core.judge_contradiction import (
     detect_judge_requirement_contradiction,
     normalize_feedback,
 )
+from deviate.core.judge_repairs import (
+    snapshot_repairs,
+    commit_repairs,
+    repair_commits,
+    replay_repairs,
+)
 from deviate.core.judge_policy import (
     JUDGE_ACTIONS as _JUDGE_ACTIONS,  # noqa: F401  (compatibility re-export)
     REVERT_JUDGE_ACTIONS as _REVERT_JUDGE_ACTIONS,
@@ -1655,7 +1661,7 @@ def _build_auto_prompt(
         "test_command": test_command,
         "test_strategy": layer["test_strategy"],
         "test_write_dir": layer["test_write_dir"],
-        "layer_lock": _layer_lock_block(layer),
+        "layer_lock": _layer_lock_block(layer, allow_setup=phase.lower() == "judge"),
         "lint_command": lint_command,
         "verification_command": verification_command,
         "verification_binary": verification_binary,
@@ -2957,6 +2963,7 @@ def _execute_rollback(
             f"is unchanged."
         )
     recovery_branch = _recovery_branch_for(task_id, attempt)
+    repairs = repair_commits(root, boundary_sha)
 
     # ISS-ADH-040: a JUDGE boundary predating the ``tasks.md``-creating
     # commit must not drop the human-authored task queue. Reset still
@@ -3053,6 +3060,10 @@ def _execute_rollback(
         capture_output=True,
         env=_git_env(),
     )
+    try:
+        replay_repairs(root, repairs)
+    except RuntimeError as exc:
+        raise PhaseFailedError(str(exc)) from exc
     _run_rollback_recovery_hook(
         root, boundary_sha=boundary_sha, head_sha=commit_sha, task_id=task_id, hook=hook
     )
@@ -4631,6 +4642,7 @@ def _run_judge_phase(
     manifest: HandoverManifest | None = None
     schema_errors: list[str] = []
     retry_prompt = prompt
+    repairs_before = snapshot_repairs(root)
     for attempt in range(1, _MAX_JUDGE_MANIFEST_ATTEMPTS + 1):
         manifest, tail = _invoke_agent(
             retry_prompt,
@@ -4702,6 +4714,7 @@ def _run_judge_phase(
             red_baseline=red_baseline,
             no_refactor=no_refactor,
             assume_yes=True,
+            repairs_before=repairs_before,
         )
     except EnvNotReadyError as _missing_reset_err:
         if "not defined" not in str(_missing_reset_err):
@@ -4895,6 +4908,7 @@ def _apply_judge_verdict(
     red_baseline: list[str] | None = None,
     no_refactor: bool = False,
     assume_yes: bool = True,
+    repairs_before: dict[str, str] | None = None,
 ) -> SessionState:
     """Apply JUDGE handover side effects shared by auto and ``judge post``.
 
@@ -4916,7 +4930,7 @@ def _apply_judge_verdict(
     operator supplied ``--yes`` / ``--revert``.
 
     Successive reject Requirement/Correction texts are compared before
-    rollback. A polar flip or A-B-A oscillation raises
+    rollback. An explicit incompatibility or identity polar flip raises
     ``HitlEscalationError`` (GH-230) instead of consuming more train budget.
     """
     tid = task.get("id", "?")
@@ -4945,6 +4959,21 @@ def _apply_judge_verdict(
         )
         _raise_judge_manifest_invalid(tid, schema_errors)
     root = Path.cwd()
+    if repairs_before is not None:
+        try:
+            repaired = commit_repairs(root, repairs_before)
+        except RuntimeError as exc:
+            raise PhaseFailedError(str(exc)) from exc
+        if repaired:
+            result = _run_test_cmd(root, task)
+            if result.returncode:
+                session.train_feedback = (
+                    f"{_GREEN_TEST_FAILURE_PREFIX}\n\n"
+                    f"<test_output>\n{(result.stdout or '')[-7900:]}\n{(result.stderr or '')[-7900:]}\n</test_output>"
+                )
+            elif _is_green_test_failure(session):
+                session.train_feedback = ""
+            session.save(session_path)
     prior_red = session.red_commit_sha
     if _refresh_session_commit_anchors(root, session):
         session.save(session_path)
@@ -8756,6 +8785,9 @@ def _judge_pre_kernel(
             raise KernelError("TASK_NOT_FOUND", f"Unrecognised task ID format: {tid}")
         if _find_task_record(work, tid) is None:
             raise KernelError("TASK_NOT_FOUND", tid)
+    checkpoint = work / ".deviate" / "judge-repairs.json"
+    checkpoint.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint.write_text(json.dumps(snapshot_repairs(work)), encoding="utf-8")
     changed = _detect_phase_changes(work)
     protected = _find_protected_modules(work)
     violations: list[dict[str, str]] = []
@@ -9336,7 +9368,7 @@ def _layer_contract_fields(root: Path, task: dict | None) -> dict[str, str]:
     }
 
 
-def _layer_lock_block(layer: dict[str, str]) -> str:
+def _layer_lock_block(layer: dict[str, str], *, allow_setup: bool = False) -> str:
     """Immutable layer stamp for RED/GREEN/JUDGE prompts (GH-248).
 
     Stored JUDGE feedback is unchanged. The lock sits above
@@ -9352,8 +9384,12 @@ def _layer_lock_block(layer: dict[str, str]) -> str:
         "<layer_lock>\n"
         f"Layer: {strategy}\n"
         f"Write tests only in: {write_dir}\n"
-        f"Run only: {command}\n"
-        f"test_strategy: {strategy}\n"
+        + (
+            f"Verify with: {command}; local mise setup and diagnostics are also allowed.\n"
+            if allow_setup
+            else f"Run only: {command}\n"
+        )
+        + f"test_strategy: {strategy}\n"
         f"test_write_dir: {write_dir}\n"
         f"test_command: {command}\n"
         "This task's test layer is locked by the runner. "
@@ -10148,6 +10184,11 @@ def judge_post(
             handover,
             injected_diff=injected_diff,
             assume_yes=yes or revert,
+            repairs_before=(
+                json.loads((root / ".deviate" / "judge-repairs.json").read_text())
+                if (root / ".deviate" / "judge-repairs.json").exists()
+                else None
+            ),
         )
     except JudgeRevertDeclinedError as exc:
         console.print(f"[yellow]{exc}[/]")

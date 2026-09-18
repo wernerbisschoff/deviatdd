@@ -25,8 +25,9 @@ Manual mode: run the scripts yourself.
    the failing tree before any `git reset`. After revert, inspect the
    discarded commit with `git switch <recovery_ref>` (not `git stash`).
    It appends train feedback to the task card in `tasks.md` and commits
-   that feedback. The agent does not `git reset` or edit `tasks.md`
-   itself.
+   that feedback. The agent may repair `tasks.md` and local mise/setup files
+   under the core body's operational repair authority. The runner commits those
+   repairs and preserves them across rollback. The agent never runs `git reset`.
 
 ### Rich Handover Manifest
 

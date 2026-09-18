@@ -50,10 +50,14 @@ def _integration_task(tmp_path: Path) -> dict[str, str]:
     )
 
 
-def _assert_integration_lock(prompt: str) -> None:
+def _assert_integration_lock(prompt: str, phase: str) -> None:
     assert "Layer: integration" in prompt
     assert "Write tests only in: tests/integration" in prompt
-    assert "Run only: mise integration" in prompt
+    if phase == "judge":
+        assert "Verify with: mise integration" in prompt
+        assert "local mise setup and diagnostics are also allowed" in prompt
+    else:
+        assert "Run only: mise integration" in prompt
     assert "<layer_lock>" in prompt
     assert "test_strategy: integration" in prompt
     assert "test_write_dir: tests/integration" in prompt
@@ -83,7 +87,7 @@ class TestPromptInjection:
         task = _integration_task(tmp_path)
         for phase in ("red", "green", "judge"):
             prompt = micro._build_auto_prompt(phase, task, tmp_path)
-            _assert_integration_lock(prompt)
+            _assert_integration_lock(prompt, phase)
             assert "```bash\nmise unit\n```" not in prompt
 
 
@@ -99,7 +103,7 @@ class TestFeedbackCarryForward:
             prompt = micro._build_auto_prompt(
                 phase, task, tmp_path, train_feedback=_UNIT_JUDGE_FEEDBACK
             )
-            _assert_integration_lock(prompt)
+            _assert_integration_lock(prompt, phase)
             assert "tests/unit/test_crypto_withdrawal.py" in prompt
             lock_at = prompt.index("<layer_lock>")
             feedback_at = prompt.index("tests/unit/test_crypto_withdrawal.py")

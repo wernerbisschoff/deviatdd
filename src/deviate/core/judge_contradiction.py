@@ -354,40 +354,6 @@ def _explicit(prior: str, current: str) -> JudgeContradiction | None:
     )
 
 
-def _oscillation(
-    prior_rounds: Sequence[str], current: str
-) -> JudgeContradiction | None:
-    if len(prior_rounds) < 2:
-        return None
-    older = prior_rounds[-2]
-    previous = prior_rounds[-1]
-    current_tokens = _tokens(requirement_focus(current))
-    older_tokens = _tokens(requirement_focus(older))
-    previous_tokens = _tokens(requirement_focus(previous))
-    aba = (
-        _jaccard(current_tokens, older_tokens) >= _OSCILLATION_SAME
-        and _jaccard(current_tokens, previous_tokens) <= _OSCILLATION_DIFF
-    )
-    if not aba:
-        return None
-    poles_conflict = (
-        _requested_provider_conflict(older, previous)
-        or _requested_provider_conflict(current, previous)
-        or _layer_sides_conflict(older, previous)
-        or _layer_sides_conflict(current, previous)
-    )
-    if not poles_conflict:
-        return None
-    return JudgeContradiction(
-        kind="oscillation",
-        prior=previous.strip(),
-        current=current.strip(),
-        shared_tokens=tuple(sorted(current_tokens & older_tokens)),
-        summary=(
-            "JUDGE requirements oscillated between two incompatible "
-            "interpretations (A → B → A). Stop training and choose one spec."
-        ),
-    )
 
 
 def detect_judge_requirement_contradiction(
@@ -416,11 +382,4 @@ def detect_judge_requirement_contradiction(
     if not distinct:
         return None
     latest = distinct[-1]
-    found = (
-        _explicit(latest, current_text)
-        or _polar_flip(latest, current_text)
-        or _layer_flip(latest, current_text)
-    )
-    if found:
-        return found
-    return _oscillation(history, current_text)
+    return _explicit(latest, current_text) or _polar_flip(latest, current_text) or _layer_flip(latest, current_text)

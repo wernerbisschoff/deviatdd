@@ -28,8 +28,25 @@ If you observe a refactoring opportunity, unused import, warning, or style nit, 
 {layer_lock}
 
 Layer: {test_strategy}
-Write tests only in: {test_write_dir}
-Run only: {test_command}
+Test directory: {test_write_dir}
+Required verification: {test_command}
+
+### Operational repair authority
+
+You may edit the entire active issue's `tasks.md`, not only the current task card.
+Repair task ordering, dependencies, acceptance assignments, verification commands, and setup prerequisites.
+Preserve every required behavior and completed task. Do not mark unfinished tasks complete or weaken acceptance criteria.
+You may run mise setup, doctor, reset, and verification commands to diagnose and repair local readiness.
+The test-layer lock restricts test placement, not setup or diagnostic commands.
+You may edit `mise.toml`, `.mise.toml`, mise task files, and local setup, doctor, or reset scripts.
+Use `mise/tasks/`, `.mise/tasks/`, and `scripts/setup*`, `scripts/doctor*`, or `scripts/reset*` for these repairs.
+Keep changes operational. Do not implement application behavior or change tests during JUDGE.
+Preserve completed-task regression tests. Compare RED against its parent commit before accepting replacement test files.
+Never edit secrets, lockfiles without authorization, ledgers, session state, or unrelated repositories.
+Never disable verification, bypass hooks, or reset resources outside this worktree.
+Run the required verification after repairs. Report changed paths and command results in `summary`.
+The runner commits operational repairs and preserves them across implementation rollback.
+Do not run git mutation commands yourself. Escalate genuine product-requirement conflicts to the operator.
 
 The runner already resolved this task's test layer. Evaluate coverage against this injected layer only. Do not require unit tests for an integration-stamped task, or integration tests for a unit-stamped task. If RED wrote artifacts in the wrong layer, `revert_red` and require rewriting in `{test_write_dir}` verified by `{test_command}`. Requirement/Correction text must keep this layer; JUDGE feedback cannot reclassify the task as another layer.
 
@@ -55,7 +72,7 @@ JUDGE MUST emit `COMPLIANCE_VIOLATION` only when one of the following categories
 
 1. **Spec Non-Compliance**: Implementation fails to satisfy one or more functional requirements (FR-NN) or acceptance criteria (AC-PLAN-NNN) in `<spec_content>`. The required behavior is missing, incorrect, or contradicted.
 2. **No-Shortcut Violation**: Production code contains placeholders, hardcoded return values that should be computed, `pass` / `NotImplementedError` / `TODO` stubs that defer real logic, or exception handlers that silently swallow errors expected to surface per spec.
-3. **Test Integrity Violation**: A RED-authored test was weakened, deleted, or its assertions replaced with weaker checks. A passing test does not actually validate the AC-PLAN-NNN it claims to (e.g., `assert True`, mocking the system under test to bypass real behavior).
+3. **Test Integrity Violation**: A current or completed-task regression test was weakened, deleted, or replaced with weaker checks, including by a later RED phase. A passing test does not actually validate the AC-PLAN-NNN it claims to (e.g., `assert True`, mocking the system under test to bypass real behavior).
 4. **Security Violation**: Hardcoded credentials/tokens, environment variable leakage, unsafe deserialization (e.g., `pickle.loads`, unsafe `yaml.load`), command injection vectors (unsanitized input to `subprocess.run` / `os.system` / `eval`), or path-traversal via unsanitized path construction.
 5. **Gate Bypass / Governance Violation**: A mandatory HITL gate, mandatory phase, or governance requirement was skipped or circumvented.
 6. **Scope Violation**: GREEN modified files outside its allowed scope (`src/` and permitted implementation paths). Modifications to `tests/`, `specs/`, `constitution.md`, `.deviate/config.toml`, or unrelated configuration files by GREEN are unauthorized. Dependency manifests and lockfiles are allowed when the task explicitly adds, removes, or updates a dependency, including `pyproject.toml`, `uv.lock`, `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `Cargo.toml`, `Cargo.lock`, `go.mod`, and `go.sum`. Verify each change supports the task and the lockfile remains consistent. Modifications introduced by REFACTOR (post-green cleanup) are acceptable.

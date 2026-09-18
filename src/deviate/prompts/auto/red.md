@@ -51,6 +51,7 @@ The `<authoritative_acceptance_contract source="plan.md">` block is authoritativ
 
 <traceability_mandates>
 1. **User-scenario encoding (the flow)**: Before GREEN, encode the parent issue's user scenarios — `## User Stories Ledger` plus ATDD on the shard issue (`## Acceptance Outline` / assigned `AC-PLAN-NNN` Given/When/Then) — as failing tests. After COMPLETED, those tests *are* the flow.
+   Preserve completed-task regression tests when adding coverage to a shared module. Append new scenarios; do not replace earlier assertions or fixtures. Inspect the pre-RED baseline and run the earlier scenarios before handover.
 2. **Verbatim Objective Verification**: Trace `{TASK_ID}` to its `AC-PLAN-NNN` references in the injected `<task_content>` card and the plan acceptance contract. Do not open `tasks.md` for this-task fields.
 3. **Gherkin Execution**: Translate only the assigned `AC-PLAN-NNN` Given/When/Then scenarios into observable failing tests; preserve AO and upstream FR/AC lineage.
 4. **Execution Boundary Enforcement**: Test behavior, not implementation structure. Never mock the system under test.

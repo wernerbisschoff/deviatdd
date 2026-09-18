@@ -552,8 +552,9 @@ class TestLayerStampedPrompts:
         auto = _read_template("judge.md")
         assert "{layer_lock}" in auto
         assert "Layer: {test_strategy}" in auto
-        assert "Write tests only in: {test_write_dir}" in auto
-        assert "Run only: {test_command}" in auto
+        assert "Test directory: {test_write_dir}" in auto
+        assert "Required verification: {test_command}" in auto
+        assert "not setup or diagnostic commands" in auto
         lowered = auto.lower()
         assert "cannot reclassify" in lowered or "cannot change this lock" in lowered
         assert re.search(r"mise integ(?!ration)", auto) is None
