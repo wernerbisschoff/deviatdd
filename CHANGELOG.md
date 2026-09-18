@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Report failed verification checkpoints as task failures instead of successful completion (#265).
+
 - Fix false JUDGE contradiction stops from alternating wording or repeated database diagnostics (#264). Explicit incompatibility still requires human resolution.
 - Allow JUDGE to repair the entire active task queue and local mise/setup definitions, with verification and rollback-safe repair commits.
 - Require explicit acceptance assignments in generated tasks. Preserve completed-task regression tests when later RED phases extend shared modules.

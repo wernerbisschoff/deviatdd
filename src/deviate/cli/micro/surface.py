@@ -7277,7 +7277,7 @@ def _run_checkpoint_phase(
     c: Console,
     agent: str | None = None,
     monitor: OrchestrationMonitor | None = None,
-) -> None:
+) -> str:
     root = Path.cwd()
     _append_checkpoint_row(task, "CHECKPOINT_STARTED", ledger_path)
     prompt = _render_checkpoint_prompt(task)
@@ -7296,12 +7296,12 @@ def _run_checkpoint_phase(
                 ledger_path,
                 reason="CHECKPOINT_HANDOVER_INVALID",
             )
-            return
-        record_checkpoint_verdict(task, handover.model_dump(), ledger_path)
+            return "CHECKPOINT_HANDOVER_INVALID"
+        return record_checkpoint_verdict(task, handover.model_dump(), ledger_path)
     except Exception as exc:
         kind = type(exc).__name__ or "AGENT_ERROR"
         _append_checkpoint_row(task, "CHECKPOINT_FAILED", ledger_path, reason=kind)
-        return
+        return kind
     finally:
         # VERIFY / checkpoint often has no implementation diff to piggyback
         # a commit on. Persist CHECKPOINT_STARTED + the terminal row (GH-231).
@@ -7330,7 +7330,11 @@ def _dispatch_task(
     global _review_task_id
     _review_task_id = task.get("id", "?")
     if task.get("task_type") == "Verification_Batch":
-        _run_checkpoint_phase(task, ledger_path, c, agent=agent, monitor=monitor)
+        outcome = _run_checkpoint_phase(
+            task, ledger_path, c, agent=agent, monitor=monitor
+        )
+        if outcome != "COMPLETED":
+            raise PhaseFailedError(f"{task.get('id', '?')}: {outcome}")
         return
     mode = task.get("execution_mode", "TDD")
     if mode == "TDD" and batch_mode:

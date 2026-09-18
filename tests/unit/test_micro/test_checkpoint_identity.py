@@ -53,6 +53,7 @@ class TestBatchIdentity:
         with (
             patch.object(micro_mod, "_run_tdd_cycle") as mock_tdd,
             patch.object(micro_mod, "_run_execute_phase") as mock_exec,
+            patch.object(micro_mod, "_run_checkpoint_phase", return_value="COMPLETED"),
         ):
             micro_mod._dispatch_task(task, ledger, Console(quiet=True))
         mock_tdd.assert_not_called()

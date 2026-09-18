@@ -124,8 +124,32 @@ def test_checkpoint_dispatch_records_terminal_verdict(
         ],
     )
     with patch.object(micro_mod.AgentBackend, "invoke", return_value=manifest):
-        micro_mod._dispatch_task(_checkpoint_task(), ledger, Console(quiet=True))
+        if expected == "CHECKPOINT_FAILED":
+            with pytest.raises(micro_mod.PhaseFailedError):
+                micro_mod._dispatch_task(
+                    _checkpoint_task(), ledger, Console(quiet=True)
+                )
+        else:
+            micro_mod._dispatch_task(_checkpoint_task(), ledger, Console(quiet=True))
     rows = [json.loads(line) for line in ledger.read_text().splitlines()]
     assert [row["status"] for row in rows] == ["CHECKPOINT_STARTED", expected]
     if expected == "COMPLETED":
         assert rows[-1]["evidence"]["items"][0]["test_quote"] == "1 passed"
+
+
+@pytest.mark.behavioral
+def test_dispatch_rejects_checkpoint_without_proof(tmp_path):
+    ledger = tmp_path / "tasks.jsonl"
+    with (
+        patch.object(
+            micro_mod.AgentBackend,
+            "invoke",
+            return_value=HandoverManifest(phase="CHECKPOINT", status="PASS"),
+        ),
+        patch.object(micro_mod, "_commit_completed_ledger"),
+        pytest.raises(micro_mod.PhaseFailedError, match="PREFLIGHT_EMPTY_RESULTS"),
+    ):
+        micro_mod._dispatch_task(_checkpoint_task(), ledger, Console(quiet=True))
+    assert (
+        json.loads(ledger.read_text().splitlines()[-1])["status"] == "CHECKPOINT_FAILED"
+    )

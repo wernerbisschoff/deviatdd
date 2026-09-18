@@ -264,6 +264,7 @@ see `DeviaTDD-api.md` §5 for the orchestration contract.:
 - **Verification tasks** (`task_type: "Verification_Batch"`): `_run_checkpoint_phase()` records `CHECKPOINT_STARTED` and invokes the checkpoint agent.
   It passes the returned manifest to `record_checkpoint_verdict()`.
   Valid `CHECKPOINT`/`PASS` proof records `COMPLETED` with evidence; failed or incomplete proof records `CHECKPOINT_FAILED`.
+  Checkpoint returns its outcome to dispatch, which raises `PhaseFailedError` unless the outcome is `COMPLETED` (#265).
   The checkpoint prompt requires command reports, criterion coverage, and typed evidence citations.
   After the terminal row is written, `_commit_completed_ledger` commits only `tasks.jsonl` (`chore(<scope>): persist checkpoint ledger`) so a VERIFY task with no implementation diff does not leave ledger rows dirty (GH-231).
 - **Non-TDD tasks** (`execution_mode: "DIRECT" | "E2E"`): Immediate completion via
