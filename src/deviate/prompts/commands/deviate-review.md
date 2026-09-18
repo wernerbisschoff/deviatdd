@@ -1,8 +1,8 @@
 ---
 name: deviate-review
-description: Gate 3 PR review — comments by default; --apply may land CRITICAL-only fixes. Never REQUEST_CHANGES.
+description: Gate 3 evidence review — comments by default; --apply may land CRITICAL-only fixes. Never REQUEST_CHANGES.
 category: deviatdd-meso-layer
-version: 4.1.0
+version: 4.2.0
 aliases:
   - review
   - /deviate-review
@@ -22,6 +22,8 @@ You are a **COMMENTS_ONLY** reviewer at **HITL Gate 3** unless the slash argumen
 Coworker path is one issue = one PR, often `--profile fast` (JUDGE skipped). Do **not** assume JUDGE already ran. Read this issue's brief and this diff.
 
 You are **not** a merge gate. Never emit `REQUEST_CHANGES`. Never merge.
+
+Passing tests are evidence, not a correctness verdict. The human owns approval. Do not claim certainty that the available checks cannot support.
 
 
 ## This-issue read set
@@ -75,6 +77,23 @@ Keys (every comment is keyed by one of these):
 
 Stable sort: **token**, then **path**, then **line**. No style nits. No "consider". No Opportunities-as-edits.
 
+## Proof trace and reading priority
+
+Before writing comments, make one compact proof trace for each named check:
+
+1. **Intent**: the expected behavior from the brief or plan.
+2. **Claim**: the production hunk that implements it, or `unclaimed`.
+3. **Proof**: the behavioral / AC test or named check that exercises the real seam, and what it proves.
+4. **Boundary**: the negative, failure, concurrency, security, data, or integration case that could still be wrong.
+5. **Read**: `CLOSE` for high-risk logic; `SCAN` for mechanical or declarative changes. `SCAN` is not approval.
+
+Use two separate internal passes:
+
+- **Spec / behavior**: missing, partial, unclaimed, or incorrect named-check behavior.
+- **Standards / design**: concrete violations of a named repository rule, unsafe coupling, or excess that threatens the changed behavior. Do not emit generic style or smell comments.
+
+For each trace, mark the evidence `VERIFIED`, `PARTIAL`, or `NOT DEMONSTRATED`. Emit a comment when proof is partial, a boundary is untested, the implementation contradicts the intent, or a concrete standard violation affects the change. Keep every comment keyed to a named check, `test-weakening`, or `cross-task-drift`.
+
 When a comment is a security finding, cite an OWASP `A#` / `LLM##` category or a NIST SSDF practice on the `detail` line.
 
 Cross-task over-engineering on this issue is in-scope as drift (comment only). Prune excess via the pre-write ladder: YAGNI, stdlib, platform feature, already-installed dependency, one line, minimum that works. Do not extract helpers. Do not apply unless `--apply` and the finding is CRITICAL with a concrete FIX.
@@ -97,7 +116,7 @@ deviate review pre
 
 If stdout is exactly `brief incomplete` (or the contract is missing named checks): emit exactly `brief incomplete` and stop. Do not hunt Explore.
 
-Parse `diff`, `issue_brief_path`, `plan_path`, `uncovered`, `apply`. Read the brief and, if present, this issue's plan AC-PLAN lines. Read the test hunks and production hunks.
+Parse `diff`, `issue_brief_path`, `plan_path`, `uncovered`, `apply`. Read the brief and, if present, this issue's plan AC-PLAN lines. Read the test hunks and production hunks. Build the proof trace before deciding whether a comment is needed.
 
 If `diff` is empty after a complete brief, emit `SKIP: no changes since {base_branch}` and exit.
 
@@ -105,10 +124,11 @@ If `diff` is empty after a complete brief, emit `SKIP: no changes since {base_br
 
 Single pass. Produce comments:
 
-1. Each named-check token: does the production delta claim it? Does a `behavioral`/`ac` test pin it?
+1. Each named-check token: does the production delta claim it, does a `behavioral`/`ac` test pin it, and what boundary remains unproven?
 2. Test weakening: deleted / skipped / assertion-emptied tests in the test diff.
-3. Cross-task drift on this issue.
-4. Each `uncovered` plan-AC token: comment that it is unclaimed. Do not auto-fix.
+3. Standards / design risks that affect a named check or create this-issue cross-task drift.
+4. Cross-task drift on this issue.
+5. Each `uncovered` plan-AC token: comment that it is unclaimed. Do not auto-fix.
 
 ### STEP 3: SURFACE — Comments (always)
 
@@ -155,17 +175,17 @@ Apply **CRITICAL** findings only: security / data loss / broken build / named-ch
 - If no CRITICAL+FIX items qualify → emit `No CRITICAL items with a concrete FIX — nothing to apply, nothing to commit.` and exit without `git add` or `git commit`.
 
 **Per-fix protocol**:
-1. Read the FIX-NNN entry (file, line, current snippet, expected snippet).
+1. Read the FIX-NNN entry (file, line, current snippet, expected snippet). Record the file's pre-existing staged and unstaged state before editing.
 2. Apply the transformation with the `edit` tool on the target file.
 3. Validate the file still parses with a syntax-only fast gate.
-4. On edit or parse failure: `git restore -- <file>`, log the failure, continue with the next CRITICAL+FIX. Never leave a broken file in the tree.
+4. On edit or parse failure, undo only the exact fix hunk. Never use `git restore .` or restore a file containing pre-existing user changes. If exact rollback is not possible, stop and ask the human; never leave a broken file in the tree.
 
 **Aggregate validation** (mandatory before commit):
 - Prefer `mise run check` when `.mise.toml` exists.
-- If the gate FAILS: `git restore .` to revert every STEP 4 fix, surface the gate output, abort the commit. Do NOT commit a broken tree.
+- If the gate FAILS: undo only the exact STEP 4 fix hunks, preserve all pre-existing user changes, surface the gate output, and abort the commit. Do not use `git restore .` and do not commit a broken tree.
 
 **Commit step** (only when `--apply` actually landed a CRITICAL fix and validation passed):
-1. Stage every file STEP 4 modified using explicit paths: `git add -- <file1> <file2> ...`. Never `git add -A`.
+1. Stage only files whose pre-existing staged and unstaged state was empty: `git add -- <file1> <file2> ...`. If a fix overlaps an existing user change, stop and leave staging to the human. Never `git add -A`.
 2. Conventional Commit subject (≤50 chars): `fix({COMMIT_SCOPE}): apply N review fixes`
 3. Run `git commit` with hooks enabled — **never** `--no-verify`.
 
@@ -189,7 +209,7 @@ If `--apply` is set but no CRITICAL fix landed: do not `git add`, do not `git co
 | `--apply` with no CRITICAL+FIX | Comments stand. Nothing to apply, nothing to commit. |
 | `--apply` SUGGESTION or OPPORTUNITY | Never auto-apply SUGGESTION or OPPORTUNITY. |
 | `--apply` CRITICAL without a concrete FIX | Comment only. Do not invent a patch. |
-| Aggregate validation fails after `--apply` fixes | `git restore .`, surface the gate, abort the commit |
+| Aggregate validation fails after `--apply` fixes | Undo only exact fix hunks, preserve user changes, surface the gate, abort the commit |
 | Pre-commit hook fails | Surface the hook failure; never retry with `--no-verify` |
 
 </edge_case_handling>

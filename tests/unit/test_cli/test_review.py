@@ -305,6 +305,10 @@ class TestReviewPreCore:
 
     def test_review_pre_emits_contract(self, tmp_git_repo: Path) -> None:
         """UT-01: deviate review pre emits valid JSON contract with all required keys."""
+        specs_dir = tmp_git_repo / "specs"
+        specs_dir.mkdir(parents=True, exist_ok=True)
+        (specs_dir / "constitution.md").write_text("# Constitution\n", encoding="utf-8")
+        (specs_dir / "prd.md").write_text("# PRD\n", encoding="utf-8")
         _seed_named_brief(tmp_git_repo)
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["review", "pre"])
@@ -315,8 +319,8 @@ class TestReviewPreCore:
         assert "status" in contract
         assert "diff" in contract
         assert "issue_brief_path" in contract
-        assert "constitution_path" in contract
-        assert "prd_path" in contract
+        assert "constitution_path" not in contract
+        assert "prd_path" not in contract
         assert "base_branch" in contract
         assert "report_exists" in contract
         assert "timestamp" in contract
@@ -330,7 +334,7 @@ class TestReviewPreCore:
         specs_dir.mkdir(parents=True, exist_ok=True)
         const_path = specs_dir / "constitution.md"
         const_path.write_text("# Test Constitution\n", encoding="utf-8")
-        _seed_named_brief(tmp_git_repo)
+        _seed_named_brief(tmp_git_repo, extra="See specs/constitution.md\n")
 
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["review", "pre"])
@@ -445,7 +449,8 @@ class TestReviewPreCore:
         issues_dir = tmp_git_repo / "specs" / "test-epic" / "issues"
         issues_dir.mkdir(parents=True, exist_ok=True)
         (issues_dir / "test-issue.md").write_text(
-            "# brief\n\nAC-ADHOC-035-01 named check\n", encoding="utf-8"
+            "# brief\n\nAC-ADHOC-035-01 named check\nSee prd.md\n",
+            encoding="utf-8",
         )
         _write_jsonl(
             tmp_git_repo / "specs" / "issues.jsonl",
@@ -499,7 +504,8 @@ class TestReviewPreCore:
         issues_dir = tmp_git_repo / "specs" / "test-epic" / "issues"
         issues_dir.mkdir(parents=True, exist_ok=True)
         (issues_dir / "test-issue.md").write_text(
-            "# brief\n\nAC-ADHOC-035-01 named check\n", encoding="utf-8"
+            "# brief\n\nAC-ADHOC-035-01 named check\nSee prd.md\n",
+            encoding="utf-8",
         )
         _write_jsonl(
             tmp_git_repo / "specs" / "issues.jsonl",
@@ -563,7 +569,8 @@ class TestReviewPreCore:
         issues_dir = tmp_git_repo / "specs" / "test-epic" / "issues"
         issues_dir.mkdir(parents=True, exist_ok=True)
         (issues_dir / "test-issue.md").write_text(
-            "# brief\n\nAC-ADHOC-035-01 named check\n", encoding="utf-8"
+            "# brief\n\nAC-ADHOC-035-01 named check\nSee prd.md\n",
+            encoding="utf-8",
         )
         _write_jsonl(
             tmp_git_repo / "specs" / "issues.jsonl",

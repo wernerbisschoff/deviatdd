@@ -18,6 +18,7 @@ from deviate.cli._common import (
 from deviate.core.review_coverage import (
     BRIEF_INCOMPLETE,
     brief_has_named_checks,
+    brief_names_path,
     evaluate_review_coverage,
     resolve_issue_brief_path,
     resolve_issue_plan_path,
@@ -98,8 +99,7 @@ def pre(
         raise typer.Exit(code=1)
 
     diff = _compute_diff(repo, resolved_base, target)
-    constitution_path = _resolve_constitution_path(repo)
-    prd_path, prd_warning = _resolve_prd(branch_name, repo)
+    brief_text = brief_path.read_text(encoding="utf-8") if brief_path else ""
     report_exists = _check_existing_reports(repo)
     coverage = evaluate_review_coverage(repo, issue_id)
     apply_on = _apply_enabled(ctx, apply)
@@ -109,10 +109,6 @@ def pre(
         "diff": diff,
         "issue_brief_path": str(brief_path.resolve()) if brief_path else None,
         "plan_path": str(plan_path.resolve()) if plan_path else None,
-        "constitution_path": constitution_path,
-        "constitution_warning": constitution_path is None,
-        "prd_path": prd_path,
-        "prd_warning": prd_warning,
         "base_branch": resolved_base,
         "report_exists": report_exists,
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -121,6 +117,14 @@ def pre(
         "apply": apply_on,
         "apply_scope": "CRITICAL" if apply_on else None,
     }
+    if brief_names_path(brief_text, "constitution.md"):
+        constitution_path = _resolve_constitution_path(repo)
+        contract["constitution_path"] = constitution_path
+        contract["constitution_warning"] = constitution_path is None
+    if brief_names_path(brief_text, "prd.md"):
+        prd_path, prd_warning = _resolve_prd(branch_name, repo)
+        contract["prd_path"] = prd_path
+        contract["prd_warning"] = prd_warning
 
     print(json.dumps(contract, indent=2))
 

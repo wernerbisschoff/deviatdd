@@ -138,6 +138,13 @@ data loss / broken build / named-check fail with a concrete FIX) and commit
 only when such a fix landed. Never auto-apply SUGGESTION or OPPORTUNITY. There
 is no always-on STEP 4.
 
+The review builds a compact proof trace for each named check: intent, production
+claim, executable proof, untested boundary, and reading priority. It keeps Spec
+and Standards passes separate, treats passing tests as evidence rather than
+approval, and emits only concrete comments keyed to the named-check contract,
+test weakening, or this-issue drift. The apply path preserves pre-existing
+worktree changes and never uses a broad restore command.
+
 Alongside the review, `/deviate-walkthrough` (see `src/deviate/cli/walkthrough.py`)
 is the four-look map of the same this-issue read set, preceded by a ≤6-line
 human cover sheet (intent, deviations or `None`, evidence/check command,
@@ -152,6 +159,10 @@ It does not send constitution/prd as default inputs unless this brief names
 those paths. The walkthrough must not reimplement, approve, hide hunks, tell
 the human to skip a look, auto-edit, or apply fixes. Both commands stay
 optional packs (`review`, `walkthrough`, `converge`); default setup does not install them.
+Each production hunk also receives a short change card: change, why, flow, proof,
+risk, and `CLOSE` or `SCAN` reading priority. The walkthrough labels rationale
+as `Inference` or `Unknown` when the brief and plan do not state it, and asks one
+short comprehension question per turn without hiding any hunk.
 The opt-in `/deviate-converge` pack (`src/deviate/cli/converge.py`) runs after this
 issue's Micro drain and before walkthrough/review/PR. It assesses present-state
 in-scope code against this issue brief, `plan.md` AC-PLAN, `tasks.md`, and filled
@@ -743,7 +754,7 @@ The remaining HITL gates are Gate 1 and Gate 3 (Gate 2 was removed).
     * Rationale for removal: the system never blocks on human approval. Plan and Tasks still commit their authored artifacts to the worktree for out-of-band review, but execution auto-advances into Micro.
 * **Gate 3: Final Merge Audit (After micro — and after optional Converge is clean — via `deviate review` / `deviate walkthrough`)**
     * *Trigger:* The operator (or agent) runs the optional `review` / `walkthrough` packs after micro (and after `/deviate-converge` is clean when that pack is in play). Coworker path is one issue = one PR, often `--profile fast` (JUDGE skipped). Converge is not a hard Gate 3 prerequisite.
-    * *Action:* `/deviate-walkthrough` emits a ≤6-line cover sheet (look 0 or preamble) then the four-look map for THIS issue/PR. `/deviate-review` comments only (stdout and/or GitHub `COMMENT`): named-check checklist + test-weakening + this-issue cross-task drift. A brief with no named checks emits exactly `brief incomplete`. Unclaimed plan-AC tokens are comment input via `uncovered`. Neither command applies, commits, `REQUEST_CHANGES`, or merges.
+    * *Action:* `/deviate-walkthrough` emits a ≤6-line cover sheet (look 0 or preamble) then the four-look map for THIS issue/PR. It explains each important production hunk with a change card and separates proof from residual risk. `/deviate-review` comments only (stdout and/or GitHub `COMMENT`): named-check proof trace + test-weakening + this-issue cross-task drift. A brief with no named checks emits exactly `brief incomplete`. Unclaimed plan-AC tokens are comment input via `uncovered`. Neither command applies, commits, `REQUEST_CHANGES`, or merges by default; the opt-in apply path preserves unrelated worktree changes.
 
 ---
 

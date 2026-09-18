@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Merge now asks for a target branch when the configured base is not active.
+- **Gate 3 walkthrough and review now explain proof and risk.** Walkthrough change cards connect intent, flow, proof, and reading priority to each production hunk. Review builds a per-check proof trace, separates Spec from Standards, and preserves unrelated worktree edits during opt-in apply. Review pre only emits constitution or PRD paths when the brief names them.
 
 - SHARD reuses epic verification commands or scopes their creation into the earliest relevant behavior issue. New commands require real checks; setup-only issues and empty passing placeholders remain forbidden.
 

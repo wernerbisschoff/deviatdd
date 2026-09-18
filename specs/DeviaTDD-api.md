@@ -1749,9 +1749,11 @@ Tasks without assigned AC references retain the previous full-context behavior. 
   * `--apply` (Opt-in: apply CRITICAL findings only after comments; default: off)
 * **Output Artifacts:** On incomplete brief: the exact line `brief incomplete`.
   Otherwise a JSON contract with `status`, `diff`, `issue_brief_path`, `plan_path`,
-  `constitution_path`, `prd_path`, `constitution_warning`, `prd_warning`,
   `base_branch`, `report_exists`, `timestamp`, `uncovered`, `coverage_complete`,
   `apply` (default `false`), `apply_scope` (`CRITICAL` when `--apply`, else null).
+  Constitution and PRD paths are included only when this brief names the
+  corresponding files. The review prompt builds a per-check proof trace and
+  keeps the standards and spec passes separate.
 
 #### `deviate review post [content]`
 
@@ -1783,6 +1785,10 @@ Tasks without assigned AC references retain the previous full-context behavior. 
   command to run those checks. Cover does not hide a look. It must not reimplement,
   approve, hide hunks, tell the human to skip a look, auto-edit, or apply fixes.
   Closeout MVP is this cover sheet — no `closeout.md` and no `/deviate-closeout`.
+  Each production hunk receives a short change card with the stated or inferred
+  why, execution flow, proof, residual risk, and `CLOSE`/`SCAN` reading priority.
+  The walkthrough labels unsupported rationale as `Inference` or `Unknown` and
+  asks one comprehension question per turn.
 * **Input Parameters:**
   * `--base <branch>` (Base branch for merge-base computation; default: `main`)
   * `--branch <branch>` (Target branch for self-contained walkthrough; default: `HEAD`)
