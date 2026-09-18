@@ -90,35 +90,65 @@ def _git_env() -> dict[str, str]:
 
 @pytest.fixture
 def tmp_git_repo(tmp_path: Path) -> Path:
-    """Provide an isolated git repo for tests (git config user.name is Test Runner)."""
+    """Provide an isolated git repo (identity + origin seeded via file write).
+
+    Runs only two git subprocesses (init + empty commit). Identity and the
+    ``origin`` remote are appended directly to ``.git/config`` instead of
+    separate ``git config`` / ``git remote add`` calls.
+    """
     subprocess.run(
         ["git", "init", "--initial-branch", "main"],
         cwd=tmp_path,
         env=_git_env(),
         check=True,
     )
-    subprocess.run(
-        ["git", "config", "user.email", "runner@test.local"],
-        cwd=tmp_path,
-        env=_git_env(),
-        check=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test Runner"],
-        cwd=tmp_path,
-        env=_git_env(),
-        check=True,
-    )
+    with open(tmp_path / ".git" / "config", "a", encoding="utf-8") as f:
+        f.write(
+            "[user]\n\temail = runner@test.local\n\tname = Test Runner\n"
+            '[remote "origin"]\n'
+            "\turl = https://example.com/repo.git\n"
+            "\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+        )
     subprocess.run(
         ["git", "commit", "--allow-empty", "-m", "initial"],
         cwd=tmp_path,
         env=_git_env(),
         check=True,
     )
-    subprocess.run(
-        ["git", "remote", "add", "origin", "https://example.com/repo.git"],
-        cwd=tmp_path,
-        env=_git_env(),
-        check=True,
-    )
     return tmp_path
+
+
+# Substring match on test node IDs that run full scripted cycles or real
+# subprocesses with sleeps (4-10s each). Run them via `mise run test-slow`.
+_SLOW_SUBSTRINGS = (
+    "test_third_green_runs_without_escalate_or_pre_red_ambiguous",
+    "test_third_revert_green_escalates_to_red",
+    "test_two_revert_green_sets_loop_and_max_streak",
+    "test_two_revert_red_sets_loop_and_emits_loop_detected",
+    "test_test_integrity_after_green_pass_coerces_to_red",
+    "test_green_test_failure_compliance_pass_continue_refactor_retrains",
+    "test_no_failing_test_revert_red_invokes_red_not_green",
+    "test_micro_green_train_feedback_still_retries_then_exhausts",
+    "test_json_default_omits_agent_output_events",
+    "test_run_all_with_live_display_agent_output",
+    "test_micro_green_mechanical_failure_routes_to_judge_not_failed",
+    "test_agent_output_lines_in_fifo_order",
+    "test_micro_green_test_defect_failure_routes_to_judge",
+    "test_additive_verification_changelog_aba_still_trains",
+    "test_additive_coverage_evidence_aba_still_trains",
+    "test_micro_judge_rejection_triggers_green_retry",
+    "test_judge_repairs_survive_the_real_cycle",
+    "test_compatible_successive_rejects_still_train",
+    "test_judge_feedback_preserved_across_rejection_rounds",
+    "test_run_safe_command_kills_sigterm_ignoring_descendants",
+    "test_second_revert_red_after_reset_does_not_raise",
+    "test_green_test_tampering_retains_red",
+    "test_micro_all_processes_all_pending",
+    "test_judge_rejection_advances_red_boundary_across_cycles",
+)
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    for item in items:
+        if any(s in item.nodeid for s in _SLOW_SUBSTRINGS):
+            item.add_marker(pytest.mark.slow)

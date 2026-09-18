@@ -9,7 +9,15 @@ uv = "latest"
 "npm:bats" = "1.13.0"
 
 [tasks.test]
-run = "uv run pytest --testmon-noselect tests/ -v"
+run = "uv run pytest --testmon-noselect tests/ -m 'not slow' -q"
+description = "Run the fast test suite (excludes slow scripted-cycle tests; see test-slow)"
+
+[tasks.test-slow]
+run = "uv run pytest --testmon-noselect tests/ -m slow -q"
+description = "Run slow scripted-cycle / real-subprocess tests only"
+
+[tasks.test-all]
+run = "uv run pytest --testmon-noselect tests/ -q"
 description = "Run the full test suite (forces full-suite; keeps .testmondata fresh)"
 
 [tasks.test-e2e]

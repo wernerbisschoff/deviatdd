@@ -4,7 +4,8 @@ import json
 import re
 import pytest
 import subprocess
-from contextlib import chdir
+from contextlib import chdir, contextmanager
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -85,6 +86,32 @@ def _seed_red_green_ancestor(repo: Path, task_id: str) -> str:
         capture_output=True,
     )
     return red_sha
+
+
+@contextmanager
+def _judge_phase_mocks(repo: Path, manifest: HandoverManifest):
+    """Patch the nine JUDGE-phase seams with working defaults; yield mocks.
+
+    ``manifest`` is returned by the stubbed agent. Common defaults: prompt
+    builds, callback is None, model resolution is None, the phase is not
+    already done, and cwd is ``repo``.
+    """
+    with (
+        patch("deviate.cli.micro._run_pytest") as mock_pytest,
+        patch("deviate.cli.micro._execute_rollback") as mock_rollback,
+        patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+        patch(
+            "deviate.cli.micro._invoke_agent", return_value=(manifest, "")
+        ) as mock_agent,
+        patch("deviate.cli.micro._build_auto_prompt", return_value="test prompt"),
+        patch("deviate.cli.micro._make_agent_output_callback", return_value=None),
+        patch("deviate.cli.micro._log_run") as mock_log,
+        patch("deviate.cli.micro._phase_already_done", return_value=False),
+        patch("deviate.cli.micro.Path.cwd", return_value=repo),
+    ):
+        yield SimpleNamespace(
+            pytest=mock_pytest, rollback=mock_rollback, agent=mock_agent, log=mock_log
+        )
 
 
 class TestJudgePre:
@@ -1344,27 +1371,8 @@ class TestJudgeFeedbackLogging:
             f"lines={lines!r}"
         )
 
-    @patch("deviate.cli.micro._run_pytest")
-    @patch("deviate.cli.micro._execute_rollback")
-    @patch("deviate.cli.micro.resolve_model_for_phase")
-    @patch("deviate.cli.micro._invoke_agent")
-    @patch("deviate.cli.micro._build_auto_prompt")
-    @patch("deviate.cli.micro._make_agent_output_callback")
-    @patch("deviate.cli.micro._log_run")
-    @patch("deviate.cli.micro._phase_already_done")
-    @patch("deviate.cli.micro.Path.cwd")
     def test_judge_rejected_prints_train_feedback_not_empty_rationale(
-        self,
-        mock_cwd: MagicMock,
-        mock_done: MagicMock,
-        mock_log: MagicMock,
-        mock_callback: MagicMock,
-        mock_build: MagicMock,
-        mock_agent: MagicMock,
-        mock_resolve: MagicMock,
-        mock_rollback: MagicMock,
-        mock_pytest: MagicMock,
-        tmp_git_repo: Path,
+        self, tmp_git_repo: Path
     ) -> None:
         """JUDGE_REJECTED print shows train_feedback even when rationale is empty.
 
@@ -1374,30 +1382,18 @@ class TestJudgeFeedbackLogging:
         ``rationale=""`` rendered as ``JUDGE_REJECTED TSK-...: `` with a
         trailing colon and no body.
         """
-        from deviate.core.agent import HandoverManifest
-        from deviate.state.config import SessionState
         from deviate.cli.micro import _run_judge_phase
         from rich.console import Console
 
         import io
 
-        cwd = tmp_git_repo
-        mock_cwd.return_value = cwd
-        mock_build.return_value = "test prompt"
-        mock_callback.return_value = None
-        mock_resolve.return_value = None
-        mock_done.return_value = False
-
-        mock_agent.return_value = (
-            HandoverManifest(
-                phase="JUDGE",
-                status="SUCCESS",
-                verdict="COMPLIANCE_VIOLATION",
-                task_id="TSK-011-05",
-                rationale="",
-                train_feedback="Implement the missing logic per spec",
-            ),
-            "",
+        manifest = HandoverManifest(
+            phase="JUDGE",
+            status="SUCCESS",
+            verdict="COMPLIANCE_VIOLATION",
+            task_id="TSK-011-05",
+            rationale="",
+            train_feedback="Implement the missing logic per spec",
         )
 
         task = {
@@ -1416,7 +1412,8 @@ class TestJudgeFeedbackLogging:
         # Capture console output to assert the train_feedback text appears
         buf = io.StringIO()
         console = Console(file=buf, force_terminal=False, width=200)
-        _run_judge_phase(task, ledger_path, session, session_path, console)
+        with _judge_phase_mocks(tmp_git_repo, manifest):
+            _run_judge_phase(task, ledger_path, session, session_path, console)
 
         output = buf.getvalue()
         assert "JUDGE_REJECTED" in output, (
@@ -1429,27 +1426,8 @@ class TestJudgeFeedbackLogging:
             f"Expected source=train_feedback label in output, got: {output!r}"
         )
 
-    @patch("deviate.cli.micro._run_pytest")
-    @patch("deviate.cli.micro._execute_rollback")
-    @patch("deviate.cli.micro.resolve_model_for_phase")
-    @patch("deviate.cli.micro._invoke_agent")
-    @patch("deviate.cli.micro._build_auto_prompt")
-    @patch("deviate.cli.micro._make_agent_output_callback")
-    @patch("deviate.cli.micro._log_run")
-    @patch("deviate.cli.micro._phase_already_done")
-    @patch("deviate.cli.micro.Path.cwd")
     def test_judge_rejected_logs_tasks_md_feedback_change(
-        self,
-        mock_cwd: MagicMock,
-        mock_done: MagicMock,
-        mock_log: MagicMock,
-        mock_callback: MagicMock,
-        mock_build: MagicMock,
-        mock_agent: MagicMock,
-        mock_resolve: MagicMock,
-        mock_rollback: MagicMock,
-        mock_pytest: MagicMock,
-        tmp_git_repo: Path,
+        self, tmp_git_repo: Path
     ) -> None:
         """JUDGE_REJECTED path prints and logs TASKS_MD_FEEDBACK with line count.
 
@@ -1457,19 +1435,10 @@ class TestJudgeFeedbackLogging:
         operator could not see what changed in the spec, and GREEN had no
         visual cue for the persisted feedback before being re-invoked.
         """
-        from deviate.core.agent import HandoverManifest
-        from deviate.state.config import SessionState
         from deviate.cli.micro import _run_judge_phase
         from rich.console import Console
 
         import io
-
-        cwd = tmp_git_repo
-        mock_cwd.return_value = cwd
-        mock_build.return_value = "test prompt"
-        mock_callback.return_value = None
-        mock_resolve.return_value = None
-        mock_done.return_value = False
 
         # Seed the issue ledger + tasks.md. The source_file must follow the
         # production convention specs/<epic>/issues/<slug>.md so
@@ -1492,16 +1461,13 @@ class TestJudgeFeedbackLogging:
             encoding="utf-8",
         )
 
-        mock_agent.return_value = (
-            HandoverManifest(
-                phase="JUDGE",
-                status="SUCCESS",
-                verdict="COMPLIANCE_VIOLATION",
-                task_id="TSK-001-01",
-                rationale="Incomplete — missing required logic",
-                train_feedback="",
-            ),
-            "",
+        manifest = HandoverManifest(
+            phase="JUDGE",
+            status="SUCCESS",
+            verdict="COMPLIANCE_VIOLATION",
+            task_id="TSK-001-01",
+            rationale="Incomplete — missing required logic",
+            train_feedback="",
         )
 
         task = {
@@ -1519,7 +1485,8 @@ class TestJudgeFeedbackLogging:
 
         buf = io.StringIO()
         console = Console(file=buf, force_terminal=False, width=200)
-        _run_judge_phase(task, ledger_path, session, session_path, console)
+        with _judge_phase_mocks(tmp_git_repo, manifest) as mocks:
+            _run_judge_phase(task, ledger_path, session, session_path, console)
 
         output = buf.getvalue()
         # Console surface: TASKS_MD_FEEDBACK with line count + feedback preview
@@ -1535,13 +1502,13 @@ class TestJudgeFeedbackLogging:
 
         # Structured log: TASKS_MD_FEEDBACK event captured with the full
         # feedback body and the line count.
-        events = [c.args[0] for c in mock_log.call_args_list]
+        events = [c.args[0] for c in mocks.log.call_args_list]
         assert "TASKS_MD_FEEDBACK" in events, (
             f"Expected TASKS_MD_FEEDBACK in structured log, got: {events}"
         )
         # Find the TASKS_MD_FEEDBACK call and inspect its kwargs
         tasks_md_call = next(
-            c for c in mock_log.call_args_list if c.args[0] == "TASKS_MD_FEEDBACK"
+            c for c in mocks.log.call_args_list if c.args[0] == "TASKS_MD_FEEDBACK"
         )
         assert tasks_md_call.kwargs.get("lines_added") == 1
         assert "Incomplete" in tasks_md_call.kwargs.get("feedback", "")
@@ -1551,27 +1518,8 @@ class TestJudgeFeedbackLogging:
         assert "**Judge Feedback**" in updated
         assert "Incomplete" in updated
 
-    @patch("deviate.cli.micro._run_pytest")
-    @patch("deviate.cli.micro._execute_rollback")
-    @patch("deviate.cli.micro.resolve_model_for_phase")
-    @patch("deviate.cli.micro._invoke_agent")
-    @patch("deviate.cli.micro._build_auto_prompt")
-    @patch("deviate.cli.micro._make_agent_output_callback")
-    @patch("deviate.cli.micro._log_run")
-    @patch("deviate.cli.micro._phase_already_done")
-    @patch("deviate.cli.micro.Path.cwd")
     def test_judge_rejected_uses_summary_when_rationale_empty(
-        self,
-        mock_cwd: MagicMock,
-        mock_done: MagicMock,
-        mock_log: MagicMock,
-        mock_callback: MagicMock,
-        mock_build: MagicMock,
-        mock_agent: MagicMock,
-        mock_resolve: MagicMock,
-        mock_rollback: MagicMock,
-        mock_pytest: MagicMock,
-        tmp_git_repo: Path,
+        self, tmp_git_repo: Path
     ) -> None:
         """JUDGE_REJECTED falls back to summary when rationale is empty.
 
@@ -1580,19 +1528,10 @@ class TestJudgeFeedbackLogging:
         rationale lookup returned an empty string. Bridge the schema
         gap so auto-mode judge rejections surface their text.
         """
-        from deviate.core.agent import HandoverManifest
-        from deviate.state.config import SessionState
         from deviate.cli.micro import _run_judge_phase
         from rich.console import Console
 
         import io
-
-        cwd = tmp_git_repo
-        mock_cwd.return_value = cwd
-        mock_build.return_value = "test prompt"
-        mock_callback.return_value = None
-        mock_resolve.return_value = None
-        mock_done.return_value = False
 
         manifest = HandoverManifest(
             phase="JUDGE",
@@ -1606,7 +1545,6 @@ class TestJudgeFeedbackLogging:
         manifest.__pydantic_extra__["summary"] = (
             "Protected module modified: src/deviate/cli/micro.py"
         )
-        mock_agent.return_value = (manifest, "")
 
         task = {
             "id": "TSK-011-05",
@@ -1623,7 +1561,8 @@ class TestJudgeFeedbackLogging:
 
         buf = io.StringIO()
         console = Console(file=buf, force_terminal=False, width=200)
-        _run_judge_phase(task, ledger_path, session, session_path, console)
+        with _judge_phase_mocks(tmp_git_repo, manifest):
+            _run_judge_phase(task, ledger_path, session, session_path, console)
 
         output = buf.getvalue()
         assert "JUDGE_REJECTED" in output, output
@@ -1634,27 +1573,8 @@ class TestJudgeFeedbackLogging:
             f"Expected source=summary label, got: {output!r}"
         )
 
-    @patch("deviate.cli.micro._run_pytest")
-    @patch("deviate.cli.micro._execute_rollback")
-    @patch("deviate.cli.micro.resolve_model_for_phase")
-    @patch("deviate.cli.micro._invoke_agent")
-    @patch("deviate.cli.micro._build_auto_prompt")
-    @patch("deviate.cli.micro._make_agent_output_callback")
-    @patch("deviate.cli.micro._log_run")
-    @patch("deviate.cli.micro._phase_already_done")
-    @patch("deviate.cli.micro.Path.cwd")
     def test_judge_rejected_builds_feedback_from_violations(
-        self,
-        mock_cwd: MagicMock,
-        mock_done: MagicMock,
-        mock_log: MagicMock,
-        mock_callback: MagicMock,
-        mock_build: MagicMock,
-        mock_agent: MagicMock,
-        mock_resolve: MagicMock,
-        mock_rollback: MagicMock,
-        mock_pytest: MagicMock,
-        tmp_git_repo: Path,
+        self, tmp_git_repo: Path
     ) -> None:
         """JUDGE_REJECTED builds multi-line feedback from the violations list.
 
@@ -1662,19 +1582,10 @@ class TestJudgeFeedbackLogging:
         rationale/train_feedback/summary, GREEN should still get
         actionable content extracted from the structured list.
         """
-        from deviate.core.agent import HandoverManifest
-        from deviate.state.config import SessionState
         from deviate.cli.micro import _run_judge_phase
         from rich.console import Console
 
         import io
-
-        cwd = tmp_git_repo
-        mock_cwd.return_value = cwd
-        mock_build.return_value = "test prompt"
-        mock_callback.return_value = None
-        mock_resolve.return_value = None
-        mock_done.return_value = False
 
         manifest = HandoverManifest(
             phase="JUDGE",
@@ -1697,7 +1608,6 @@ class TestJudgeFeedbackLogging:
                 "recommendation": "Revert and re-implement in helper module.",
             },
         ]
-        mock_agent.return_value = (manifest, "")
 
         task = {
             "id": "TSK-011-05",
@@ -1714,7 +1624,8 @@ class TestJudgeFeedbackLogging:
 
         buf = io.StringIO()
         console = Console(file=buf, force_terminal=False, width=200)
-        _run_judge_phase(task, ledger_path, session, session_path, console)
+        with _judge_phase_mocks(tmp_git_repo, manifest):
+            _run_judge_phase(task, ledger_path, session, session_path, console)
 
         output = buf.getvalue()
         assert "JUDGE_REJECTED" in output

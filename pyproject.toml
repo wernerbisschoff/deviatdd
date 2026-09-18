@@ -69,6 +69,7 @@ markers = [
     "behavioral: public input-to-output / AC contract",
     "spy: internal call or spy probe",
     "impl: implementation-coupled test",
+    "slow: full scripted cycle or real-subprocess test (>3s); excluded from default fast run",
     "ac: acceptance-criteria encoding",
 ]
 

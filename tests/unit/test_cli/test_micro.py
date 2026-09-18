@@ -108,56 +108,47 @@ class TestResolveAgentConfigBackendAlias:
     :func:`deviate.core.agent.resolve_agent_to_backend`.
     """
 
-    def test_cli_arg_omp_passes_through_as_canonical(self, tmp_path: Path) -> None:
-        """`--agent omp` from the CLI must return ``omp`` (canonical,
-        not aliased to ``pi``)."""
+    @pytest.mark.parametrize(
+        "cli_arg,expected",
+        [
+            ("omp", "omp"),
+            ("factory", "droid"),
+            ("opencode", "opencode"),
+            ("claude", "claude"),
+            ("droid", "droid"),
+            ("pi", "pi"),
+            ("codex", "codex"),
+        ],
+    )
+    def test_cli_arg_resolves_backend(
+        self, tmp_path: Path, cli_arg: str, expected: str
+    ) -> None:
         from deviate.cli.micro import _resolve_agent_config
 
-        assert _resolve_agent_config(tmp_path, "omp") == "omp"
+        assert _resolve_agent_config(tmp_path, cli_arg) == expected
 
-    def test_cli_arg_factory_resolves_to_droid(self, tmp_path: Path) -> None:
-        """`--agent factory` from the CLI must return ``droid``."""
-        from deviate.cli.micro import _resolve_agent_config
-
-        assert _resolve_agent_config(tmp_path, "factory") == "droid"
-
-    def test_cli_arg_canonical_passes_through(self, tmp_path: Path) -> None:
-        """Canonical backend names pass through unchanged."""
-        from deviate.cli.micro import _resolve_agent_config
-
-        for canonical in ("opencode", "claude", "droid", "pi", "omp", "codex"):
-            assert _resolve_agent_config(tmp_path, canonical) == canonical
-
-    def test_config_toml_omp_passes_through_as_canonical(self, tmp_path: Path) -> None:
-        """``backend = "omp"`` in ``.deviate/config.toml`` must return ``omp``."""
-        from deviate.cli.micro import _resolve_agent_config
-
-        dot = tmp_path / ".deviate"
-        dot.mkdir()
-        (dot / "config.toml").write_text('[agent]\nbackend = "omp"\n')
-
-        assert _resolve_agent_config(tmp_path, None) == "omp"
-
-    def test_config_toml_factory_resolves_to_droid(self, tmp_path: Path) -> None:
-        """``backend = "factory"`` in config.toml must return ``droid``."""
-        from deviate.cli.micro import _resolve_agent_config
-
-        dot = tmp_path / ".deviate"
-        dot.mkdir()
-        (dot / "config.toml").write_text('[agent]\nbackend = "factory"\n')
-
-        assert _resolve_agent_config(tmp_path, None) == "droid"
-
-    def test_config_toml_canonical_passes_through(self, tmp_path: Path) -> None:
-        """Canonical backends in config.toml pass through unchanged."""
+    @pytest.mark.parametrize(
+        "configured,expected",
+        [
+            ("omp", "omp"),
+            ("factory", "droid"),
+            ("opencode", "opencode"),
+            ("claude", "claude"),
+            ("droid", "droid"),
+            ("pi", "pi"),
+            ("codex", "codex"),
+        ],
+    )
+    def test_config_toml_resolves_backend(
+        self, tmp_path: Path, configured: str, expected: str
+    ) -> None:
         from deviate.cli.micro import _resolve_agent_config
 
         dot = tmp_path / ".deviate"
         dot.mkdir()
+        (dot / "config.toml").write_text(f'[agent]\nbackend = "{configured}"\n')
 
-        for canonical in ("opencode", "claude", "droid", "pi", "omp", "codex"):
-            (dot / "config.toml").write_text(f'[agent]\nbackend = "{canonical}"\n')
-            assert _resolve_agent_config(tmp_path, None) == canonical
+        assert _resolve_agent_config(tmp_path, None) == expected
 
     def test_no_config_returns_none(self, tmp_path: Path) -> None:
         """No config file and no CLI arg → None (dispatch falls back to default)."""
@@ -2651,185 +2642,86 @@ class TestCoerceJudgeActionTestIntegrity:
     Mechanical overlay is not coerced by Test Integrity.
     """
 
-    def test_green_pass_test_integrity_omitted_next_action_is_revert_red(
+    @pytest.mark.parametrize(
+        "next_action,violations,evaluation,failure_kind,expected",
+        [
+            (None, "integrity", None, "", "revert_red"),
+            ("revert_green", "integrity", {"test_integrity": "FAIL"}, "", "revert_red"),
+            (None, "spec", {"test_integrity": "PASS"}, "", "revert_green"),
+            ("revert_green", "spec", {"test_integrity": "FAIL"}, "", "revert_red"),
+            (
+                "revert_green",
+                "integrity",
+                {"test_integrity": "FAIL"},
+                "mechanical",
+                "revert_green",
+            ),
+            ("revert_green", None, None, "test_defect", "revert_red"),
+            ("revert_green", None, None, "no_failing_test", "revert_red"),
+        ],
+    )
+    def test_coerce_matrix(
         self,
+        next_action: str | None,
+        violations: str | None,
+        evaluation: dict[str, str] | None,
+        failure_kind: str,
+        expected: str,
     ) -> None:
         from deviate.cli.micro import _coerce_judge_action
 
         manifest = _judge_violation_manifest(
-            violations=[_TEST_INTEGRITY_VIOLATION],
+            next_action=next_action,
+            violations=[
+                {"integrity": _TEST_INTEGRITY_VIOLATION, "spec": _SPEC_ONLY_VIOLATION}[
+                    violations
+                ]
+            ]
+            if violations is not None
+            else None,
+            evaluation=evaluation,
         )
-        result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION", failure_kind="")
-        assert result == "revert_red", (
-            "GREEN PASS + Test Integrity + omitted next_action must coerce "
-            f"to revert_red; got {result!r}"
-        )
-
-    def test_green_pass_test_integrity_explicit_revert_green_is_revert_red(
-        self,
-    ) -> None:
-        from deviate.cli.micro import _coerce_judge_action
-
-        manifest = _judge_violation_manifest(
-            next_action="revert_green",
-            violations=[_TEST_INTEGRITY_VIOLATION],
-            evaluation={"test_integrity": "FAIL"},
-        )
-        result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION", failure_kind="")
-        assert result == "revert_red", (
-            "GREEN PASS + Test Integrity + explicit revert_green must still "
-            f"coerce to revert_red; got {result!r}"
-        )
-
-    def test_green_pass_spec_only_omitted_next_action_stays_revert_green(
-        self,
-    ) -> None:
-        from deviate.cli.micro import _coerce_judge_action
-
-        manifest = _judge_violation_manifest(
-            violations=[_SPEC_ONLY_VIOLATION],
-            evaluation={"test_integrity": "PASS"},
-        )
-        result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION", failure_kind="")
-        assert result == "revert_green", (
-            "GREEN PASS + Spec Non-Compliance only + test_integrity PASS "
-            f"must stay revert_green; got {result!r}"
-        )
-
-    def test_evaluation_fail_alone_forces_revert_red(self) -> None:
-        from deviate.cli.micro import _coerce_judge_action
-
-        manifest = _judge_violation_manifest(
-            next_action="revert_green",
-            violations=[_SPEC_ONLY_VIOLATION],
-            evaluation={"test_integrity": "FAIL"},
-        )
-        result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION", failure_kind="")
-        assert result == "revert_red", (
-            "evaluation.test_integrity FAIL must force revert_red even "
-            f"without a Test Integrity category; got {result!r}"
-        )
-
-    def test_mechanical_overlay_keeps_declared_revert_green(self) -> None:
-        from deviate.cli.micro import _coerce_judge_action
-
-        manifest = _judge_violation_manifest(
-            next_action="revert_green",
-            violations=[_TEST_INTEGRITY_VIOLATION],
-            evaluation={"test_integrity": "FAIL"},
-        )
-        result = _coerce_judge_action(
-            manifest, "COMPLIANCE_VIOLATION", failure_kind="mechanical"
-        )
-        assert result == "revert_green", (
-            "mechanical overlay must keep the agent's three-way choice; "
-            f"Test Integrity must not coerce revert_red; got {result!r}"
-        )
-
-    @pytest.mark.parametrize("failure_kind", ["test_defect", "no_failing_test"])
-    def test_existing_failure_kind_force_revert_red_still_holds(
-        self, failure_kind: str
-    ) -> None:
-        from deviate.cli.micro import _coerce_judge_action
-
-        manifest = _judge_violation_manifest(next_action="revert_green")
-        result = _coerce_judge_action(
-            manifest, "COMPLIANCE_VIOLATION", failure_kind=failure_kind
-        )
-        assert result == "revert_red", (
-            f"{failure_kind!r} + COMPLIANCE_VIOLATION must still force "
-            f"revert_red; got {result!r}"
+        assert (
+            _coerce_judge_action(
+                manifest, "COMPLIANCE_VIOLATION", failure_kind=failure_kind
+            )
+            == expected
         )
 
 
 class TestFindTaskRecord:
-    def test_find_task_record_returns_latest_status(self, tmp_path: Path):
+    @pytest.mark.parametrize(
+        "statuses,expected",
+        [
+            (["PENDING", "RED", "GREEN", "JUDGE"], "JUDGE"),
+            (["PENDING", "RED", "GREEN", "JUDGE", "COMPLETED"], "COMPLETED"),
+        ],
+    )
+    def test_find_task_record_returns_latest_status(
+        self, tmp_path: Path, statuses: list[str], expected: str
+    ):
         from deviate.cli.micro import _find_task_record
 
-        records = [
-            {
-                "id": "TSK-005-07",
-                "issue_id": "ISS-002-005",
-                "description": "test",
-                "status": "PENDING",
-            },
-            {
-                "id": "TSK-005-07",
-                "issue_id": "ISS-002-005",
-                "description": "test",
-                "status": "RED",
-            },
-            {
-                "id": "TSK-005-07",
-                "issue_id": "ISS-002-005",
-                "description": "test",
-                "status": "GREEN",
-            },
-            {
-                "id": "TSK-005-07",
-                "issue_id": "ISS-002-005",
-                "description": "test",
-                "status": "JUDGE",
-            },
-        ]
         ledger_path = tmp_path / "specs" / "005-micro-layer" / "tasks.jsonl"
         ledger_path.parent.mkdir(parents=True)
-        for r in records:
-            ledger_path.open("a").write(json.dumps(r) + "\n")
+        for status in statuses:
+            ledger_path.open("a").write(
+                json.dumps(
+                    {
+                        "id": "TSK-005-07",
+                        "issue_id": "ISS-002-005",
+                        "description": "test",
+                        "status": status,
+                    }
+                )
+                + "\n"
+            )
 
         result = _find_task_record(tmp_path, "TSK-005-07")
         assert result is not None, "Expected to find the task record"
         task, ledger_file = result
-        assert task["status"] == "JUDGE", (
-            f"Expected latest status JUDGE, got {task['status']}"
-        )
+        assert task["status"] == expected
         assert ledger_file == ledger_path
-
-    def test_find_task_record_multiple_entries_returns_last(self, tmp_path: Path):
-        from deviate.cli.micro import _find_task_record
-
-        ledger_path = tmp_path / "specs" / "adhoc" / "tasks.jsonl"
-        ledger_path.parent.mkdir(parents=True)
-        for r in [
-            {
-                "id": "TSK-005-07",
-                "issue_id": "ISS-002-005",
-                "description": "first",
-                "status": "PENDING",
-            },
-            {
-                "id": "TSK-005-07",
-                "issue_id": "ISS-002-005",
-                "description": "first",
-                "status": "RED",
-            },
-            {
-                "id": "TSK-005-07",
-                "issue_id": "ISS-002-005",
-                "description": "first",
-                "status": "GREEN",
-            },
-            {
-                "id": "TSK-005-07",
-                "issue_id": "ISS-002-005",
-                "description": "first",
-                "status": "JUDGE",
-            },
-            {
-                "id": "TSK-005-07",
-                "issue_id": "ISS-002-005",
-                "description": "first",
-                "status": "COMPLETED",
-            },
-        ]:
-            ledger_path.open("a").write(json.dumps(r) + "\n")
-
-        result = _find_task_record(tmp_path, "TSK-005-07")
-        assert result is not None
-        task, ledger_file = result
-        assert task["status"] == "COMPLETED", (
-            f"Expected COMPLETED as last record, got {task['status']}"
-        )
 
 
 @pytest.mark.behavioral
