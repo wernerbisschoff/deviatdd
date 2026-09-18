@@ -323,11 +323,11 @@ class TestMergePromptBaseBranch:
             / "deviate-merge.md"
         ).read_text(encoding="utf-8")
 
-    def test_merge_prompt_targets_configured_base_branch(self):
+    def test_merge_prompt_targets_selected_merge_branch(self):
         prompt = self._read_prompt()
-        assert "git checkout {base_branch}" in prompt
-        assert "git log {base_branch}.." in prompt
-        assert "git diff {base_branch}..." in prompt
+        assert "git checkout {merge_target}" in prompt
+        assert "git log {merge_target}.." in prompt
+        assert "git diff {merge_target}..." in prompt
         assert "git checkout main" not in prompt
         assert "git log main.." not in prompt
         assert "git diff main..." not in prompt

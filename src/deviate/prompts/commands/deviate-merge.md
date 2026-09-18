@@ -28,7 +28,7 @@ The ledger is never written by hand — it always goes through the CLI (``deviat
 
 Validate preconditions:
 
-0. **Resolve `{base_branch}`**: run `deviate merge pre` and parse `base_branch` from the JSON contract. That value comes from `resolve_base_branch` / `.deviate/config.toml` `base_branch` and defaults to `main` when unset. Use it as the squash target for every checkout, log, diff, and integration-branch check below.
+0. **Resolve `{base_branch}`**: run `deviate merge pre` and parse `base_branch` from the JSON contract. That value comes from `resolve_base_branch` / `.deviate/config.toml` `base_branch` and defaults to `main` when unset. Treat it as the proposed squash target.
 
 1. **Detached HEAD check**: `git branch --show-current` — if empty, halt with `Failure_State: Detached_HEAD`
 2. **Clean working tree**: `git status --porcelain` — if non-empty, halt with `Failure_State: Working_Tree_Not_Clean`
@@ -43,6 +43,7 @@ Validate preconditions:
    - From the session's `active_issue_id` (read via `deviate session` or `.deviate/session.json`)
 
 5. **Branch resolution check**: If the resolved feature branch is empty or still points to `{base_branch}`, halt with `Failure_State: No_Feature_Branch_Specified`
+6. **Resolve the merge target**: run `git branch --show-current`. If the active branch is `{base_branch}`, use it as `{merge_target}`. Otherwise, ask the user which branch to merge into, showing `{base_branch}` and the active branch as options. Store the selected branch as `{merge_target}` and use it for all later logs, diffs, checkout, pull, and squash commands.
 
 </step>
 
@@ -51,10 +52,10 @@ Validate preconditions:
 Capture the full change context from the feature branch:
 
 ```bash
-git log {base_branch}..{FEATURE_BRANCH} --oneline --no-decorate
-git log {base_branch}..{FEATURE_BRANCH} --format="%H|%s|%an" --no-decorate
-git diff {base_branch}...{FEATURE_BRANCH} --stat
-git diff {base_branch}...{FEATURE_BRANCH} --diff-filter=AM --name-only
+git log {merge_target}..{FEATURE_BRANCH} --oneline --no-decorate
+git log {merge_target}..{FEATURE_BRANCH} --format="%H|%s|%an" --no-decorate
+git diff {merge_target}...{FEATURE_BRANCH} --stat
+git diff {merge_target}...{FEATURE_BRANCH} --diff-filter=AM --name-only
 ```
 
 Analyse:
@@ -112,7 +113,7 @@ Present the full merge plan to the user:
 
 ```
 Feature branch: {FEATURE_BRANCH}
-Base:           {base_branch}
+Merge into:      {merge_target}
 Commits:        {N} commits
 Files changed:  {N} files, {N}+ / {N}-
 
@@ -130,9 +131,9 @@ If the user chooses **Edit commit message**, collect the revised message and re-
 
 <step id="execution">
 
-1. **Switch to `{base_branch}`**:
+1. **Switch to `{merge_target}`**:
    ```bash
-   git checkout {base_branch}
+   git checkout {merge_target}
    git pull --ff-only
    ```
 
