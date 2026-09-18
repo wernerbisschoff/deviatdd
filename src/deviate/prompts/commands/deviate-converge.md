@@ -132,7 +132,7 @@ If ownership or required scope is unclear, ask the operator before appending tas
 Do not create a new issue automatically. Include evidence, the scope reason, and a proposed acceptance check in the suggestion.
 Epic closeout is a separate review after constituent issues complete; do not assess epic-wide completeness in this issue's Converge.
 
-After a clean assessment, `deviate converge post '{"findings":[]}'` removes this issue's `plan.md` and `tasks.md`, and prunes issue-owned spy tests. It must not delete any `tasks.jsonl` ledger.
+After a clean assessment, `deviate converge post '{"findings":[]}'` removes this issue's `plan.md` and `tasks.md`, and prunes issue-owned spy and wrapper tests. It must not delete any `tasks.jsonl` ledger.
 Do not include cleanup in findings. Cleanup runs only after post adds no tasks.
 Do not include follow-ups or reminders in the `findings` payload. They do not prevent CONVERGED.
 Do not append speculative, duplicate, or out-of-scope tasks.
@@ -142,7 +142,7 @@ Never delete, rewrite, or manually edit the append-only ledger. Converge `post` 
 
 1. Run `deviate converge pre`. Stop on `CONVERGE_NOT_READY` or a missing-artifact message.
 2. Read only the contract paths.
-3. Check leftover spy tests. Only when none remain and the brief, AC-PLAN, tasks, and constitution MUST are satisfied, submit empty findings and report CONVERGED.
+3. Check leftover spy and wrapper tests. Converge removes both classes from the issue-owned test set. Only when none remain and the brief, AC-PLAN, tasks, and constitution MUST are satisfied, submit empty findings and report CONVERGED.
 4. Otherwise emit findings (CRITICAL first) and run `deviate converge post '<json>'`.
 5. Report follow-ups separately. When clean, emit the artifact reminder. Do not start walkthrough, review, or `/deviate-pr`. If tasks were appended, Micro runs next.
 
